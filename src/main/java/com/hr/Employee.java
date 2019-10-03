@@ -1,5 +1,8 @@
 package com.hr;
 
+import java.math.BigDecimal;
+import java.sql.Date;
+
 public class Employee {
   private int id;
   private String firstName;
@@ -7,33 +10,51 @@ public class Employee {
   private String email;
   // todo String?
   private String phone;
+  private Date hireDate;
+  private JobId jobId;
+  private BigDecimal salary;
 
-  public Employee(int id, String firstName, String lastName, String email, String phone) {
+  Employee(int id, String firstName, String lastName, String email, String phone, Date hireDate, JobId jobId, BigDecimal salary) {
     this.id = id;
     this.firstName = firstName;
     this.lastName = lastName;
     this.email = email;
     this.phone = phone;
+    this.hireDate = hireDate;
+    this.jobId = jobId;
+    this.salary = salary;
   }
 
-  public int getId() {
+  int getId() {
     return id;
   }
 
-  public String getFirstName() {
+  String getFirstName() {
     return firstName;
   }
 
-  public String getLastName() {
+  String getLastName() {
     return lastName;
   }
 
-  public String getEmail() {
+  String getEmail() {
     return email;
   }
 
-  public String getPhone() {
+  String getPhone() {
     return phone;
+  }
+
+  Date getHireDate() {
+    return hireDate;
+  }
+
+  JobId getJobId() {
+    return jobId;
+  }
+
+  BigDecimal getSalary() {
+    return salary;
   }
 
   @Override
@@ -44,6 +65,9 @@ public class Employee {
         ", lastName='" + lastName + '\'' +
         ", email='" + email + '\'' +
         ", phone='" + phone + '\'' +
+        ", hireDate=" + hireDate +
+        ", jobId=" + jobId +
+        ", salary=" + salary +
         '}';
   }
 }

@@ -13,14 +13,14 @@ public class Application {
     employees = employeeRepository.findEmployeesByFirstName("Alexander");
     employees.forEach(System.out::println);
 
-    Optional<Employee> employee = employeeRepository.getById(105);
+    Optional<Employee> employee = employeeRepository.findById(105);
     System.out.println(employee);
 
-    employee = employeeRepository.getById(1);
+    employee = employeeRepository.findById(1);
     System.out.println(employee);
 
     employeeRepository.changePhoneNumber(105, "777");
-    employee = employeeRepository.getById(105);
+    employee = employeeRepository.findById(105);
     System.out.println(employee);
   }
 }
