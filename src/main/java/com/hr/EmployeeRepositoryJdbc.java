@@ -10,7 +10,7 @@ import java.util.Set;
 
 import static java.lang.String.format;
 
-class EmployeeRepository {
+class EmployeeRepositoryJdbc {
   // Sql
   private static final String getAllSql =
       "SELECT employee_id, first_name, last_name, email, phone_number FROM employees";
@@ -27,7 +27,7 @@ class EmployeeRepository {
   private static PreparedStatement getByFirstName;
   private static PreparedStatement getByLastName;
 
-  EmployeeRepository() {
+  EmployeeRepositoryJdbc() {
     HikariConfig hikariConfig = new HikariConfig("hikari.properties");
     hikariDataSource = new HikariDataSource(hikariConfig);
 

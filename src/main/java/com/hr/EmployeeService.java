@@ -3,10 +3,10 @@ package com.hr;
 import java.util.Set;
 
 public class EmployeeService {
-  private EmployeeRepository employeeRepository;
+  private EmployeeRepositoryJdbc employeeRepository;
 
   public EmployeeService() {
-    this.employeeRepository = new EmployeeRepository();
+    this.employeeRepository = new EmployeeRepositoryJdbc();
   }
 
   Set<Employee> getAll() {

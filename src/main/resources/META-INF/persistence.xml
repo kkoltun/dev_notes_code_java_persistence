@@ -1,0 +1,28 @@
+<persistence
+        version="2.1"
+        xmlns="http://xmlns.jcp.org/xml/ns/persistence"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/persistence
+                            http://xmlns.jcp.org/xml/ns/persistence_2_1.xsd">
+
+    <persistence-unit name="HrAppPU">
+        <jta-data-source>hrAppDataSource</jta-data-source>
+
+        <class>com.hr.Employee</class>
+
+        <!--
+        Disable Hibernate searching the classpath for mapped classes.
+        -->
+        <exclude-unlisted-classes>true</exclude-unlisted-classes>
+
+        <properties>
+            <property name = "hibernate.show_sql" value = "true" />
+            <property name="hibernate.use_sql_comments" value="true"/>
+
+            <!-- Disable Hibernate scanning completely, we also don't want any hbm.xml files
+                 discovered and added automatically. -->
+            <property name="hibernate.archive.autodetection" value="none"/>
+        </properties>
+
+    </persistence-unit>
+</persistence>
