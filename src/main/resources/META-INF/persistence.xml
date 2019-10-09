@@ -16,12 +16,16 @@
         <exclude-unlisted-classes>true</exclude-unlisted-classes>
 
         <properties>
-            <property name = "hibernate.show_sql" value = "true" />
+            <property name="hibernate.show_sql" value="true"/>
             <property name="hibernate.use_sql_comments" value="true"/>
 
             <!-- Disable Hibernate scanning completely, we also don't want any hbm.xml files
                  discovered and added automatically. -->
             <property name="hibernate.archive.autodetection" value="none"/>
+
+            <!-- When remove(entity) is called, reset the identifier value of entity.
+                 so it's considered transient after removal -->
+            <property name="hibernate.use_identifier_rollback" value="true"/>
         </properties>
 
     </persistence-unit>

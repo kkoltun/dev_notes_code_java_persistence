@@ -1,6 +1,6 @@
 package com.hr;
 
-enum JobId {
+public enum JobId {
   AC_ACCOUNT,
   AC_MGR,
   AD_ASST,

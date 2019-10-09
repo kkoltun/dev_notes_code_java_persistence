@@ -35,17 +35,10 @@ public class Employee {
 
   private BigDecimal salary;
 
-  Employee() {}
+  public Employee() {
+  }
 
-  Employee(
-      Integer id,
-      String firstName,
-      String lastName,
-      String email,
-      String phone,
-      Date hireDate,
-      JobId jobId,
-      BigDecimal salary) {
+  public Employee(Integer id, String firstName, String lastName, String email, String phone, Date hireDate, JobId jobId, BigDecimal salary) {
     this.id = id;
     this.firstName = firstName;
     this.lastName = lastName;
@@ -56,67 +49,67 @@ public class Employee {
     this.salary = salary;
   }
 
-  Integer getId() {
+  public Integer getId() {
     return id;
   }
 
-  String getFirstName() {
-    return firstName;
-  }
-
-  String getLastName() {
-    return lastName;
-  }
-
-  String getEmail() {
-    return email;
-  }
-
-  String getPhone() {
-    return phone;
-  }
-
-  Date getHireDate() {
-    return hireDate;
-  }
-
-  JobId getJobId() {
-    return jobId;
-  }
-
-  BigDecimal getSalary() {
-    return salary;
-  }
-
-  void setId(Integer id) {
+  public void setId(Integer id) {
     this.id = id;
   }
 
-  void setFirstName(String firstName) {
+  public String getFirstName() {
+    return firstName;
+  }
+
+  public void setFirstName(String firstName) {
     this.firstName = firstName;
   }
 
-  void setLastName(String lastName) {
+  public String getLastName() {
+    return lastName;
+  }
+
+  public void setLastName(String lastName) {
     this.lastName = lastName;
   }
 
-  void setEmail(String email) {
+  public String getEmail() {
+    return email;
+  }
+
+  public void setEmail(String email) {
     this.email = email;
   }
 
-  void setPhone(String phone) {
+  public String getPhone() {
+    return phone;
+  }
+
+  public void setPhone(String phone) {
     this.phone = phone;
   }
 
-  void setHireDate(Date hireDate) {
+  public Date getHireDate() {
+    return hireDate;
+  }
+
+  public void setHireDate(Date hireDate) {
     this.hireDate = hireDate;
   }
 
-  void setJobId(JobId jobId) {
+  public JobId getJobId() {
+    return jobId;
+  }
+
+  public void setJobId(JobId jobId) {
     this.jobId = jobId;
   }
 
-  void setSalary(BigDecimal salary) {
+  public BigDecimal getSalary() {
+    return salary;
+  }
+
+  public void setSalary(BigDecimal salary) {
     this.salary = salary;
   }
 

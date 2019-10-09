@@ -1,29 +1,30 @@
-package com.hr;
+package com.hr.jpa;
 
 import bitronix.tm.TransactionManagerServices;
 import bitronix.tm.resource.jdbc.PoolingDataSource;
 
 import javax.naming.Context;
 import javax.naming.InitialContext;
+import javax.sql.DataSource;
+import javax.transaction.Status;
 import javax.transaction.UserTransaction;
 
-class TransactionManagerSetup {
+class InMemoryTransactionManagerSetup {
+  private static final String HIBERNATE_DIALECT = org.hibernate.dialect.H2Dialect.class.getName();
   private static final String DATASOURCE_NAME = "hrAppDataSource";
   private static final String SERVER_ID = "myServer";
-  private static final String BITRONIX_XA_DATASOURCE =
-      "bitronix.tm.resource.jdbc.lrc.LrcXADataSource";
   private static final String JDBC_URL =
-      "jdbc:mysql://localhost:3306/hr?sessionVariables=sql_mode='PIPES_AS_CONCAT'";
-  private static final String DRIVER_CLASS_NAME = "com.mysql.cj.jdbc.Driver";
+      "jdbc:h2:mem:test";
 
   private final Context context = new InitialContext();
+  private final PoolingDataSource datasource;
 
-  TransactionManagerSetup() throws Exception {
+  InMemoryTransactionManagerSetup() throws Exception {
     TransactionManagerServices.getConfiguration().setServerId(SERVER_ID);
     TransactionManagerServices.getConfiguration().setDisableJmx(true);
     TransactionManagerServices.getConfiguration().setJournal("null");
 
-    PoolingDataSource datasource = new PoolingDataSource();
+    datasource = new PoolingDataSource();
     datasource.setUniqueName(DATASOURCE_NAME);
     datasource.setMinPoolSize(1);
     datasource.setMaxPoolSize(5);
@@ -34,11 +35,10 @@ class TransactionManagerSetup {
     // mode and not joined with a transaction.
     datasource.setAllowLocalTransactions(true);
 
-    datasource.setClassName(BITRONIX_XA_DATASOURCE);
+    datasource.setClassName("org.h2.jdbcx.JdbcDataSource");
     datasource.getDriverProperties().put("url", JDBC_URL);
-    datasource.getDriverProperties().put("driverClassName", DRIVER_CLASS_NAME);
-    datasource.getDriverProperties().put("user", "hr");
-    datasource.getDriverProperties().put("password", "hr");
+    datasource.getDriverProperties().put("user", "user");
+    datasource.getDriverProperties().put("password", "sa");
     datasource.init();
   }
 
@@ -48,6 +48,27 @@ class TransactionManagerSetup {
     } catch (Exception ex) {
       throw new RuntimeException(ex);
     }
+  }
+
+  String getHibernateDialect() {
+    return HIBERNATE_DIALECT;
+  }
+
+  void rollback() {
+    UserTransaction tx = getUserTransaction();
+    try {
+      if (tx.getStatus() == Status.STATUS_ACTIVE ||
+          tx.getStatus() == Status.STATUS_MARKED_ROLLBACK)
+        tx.rollback();
+    } catch (Exception ex) {
+      System.err.println("Rollback of transaction failed, trace follows!");
+      ex.printStackTrace(System.err);
+    }
+  }
+
+  void stop() {
+    datasource.close();
+    TransactionManagerServices.getTransactionManager().shutdown();
   }
 
   private Context getNamingContext() {

@@ -1,10 +1,10 @@
-package com.hr;
+package com.hr.jpa;
 
-import bitronix.tm.TransactionManagerServices;
+import com.hr.Employee;
+import com.hr.JobId;
+import org.junit.jupiter.api.Test;
 
 import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.persistence.Persistence;
 import javax.transaction.UserTransaction;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -13,25 +13,17 @@ import java.util.List;
 import static java.time.LocalDate.now;
 import static java.util.Collections.emptyList;
 
-class EmployeeRepositoryHibernate {
+// TODO test different operations
+class OperationsTest extends JpaTest {
 
-  private static final String PERSISTENCE_UNIT_NAME = "HrAppPU";
-
-  private TransactionManagerSetup transactionManagerSetup;
-  private EntityManagerFactory entityManagerFactory;
-
-  EmployeeRepositoryHibernate() throws Exception {
-    transactionManagerSetup = new TransactionManagerSetup();
-    entityManagerFactory = Persistence.createEntityManagerFactory(PERSISTENCE_UNIT_NAME);
-  }
-
+  @Test
   void addNewEmployee(String firstName, String lastName, String email) {
+    EntityManager entityManager = JPA.createEntityManager();
+
     try {
-      UserTransaction transaction = transactionManagerSetup.getUserTransaction();
+      UserTransaction transaction = TM.getUserTransaction();
 
       transaction.begin();
-
-      EntityManager entityManager = entityManagerFactory.createEntityManager();
 
       Employee employee = new Employee();
       employee.setId(12345);
@@ -46,26 +38,29 @@ class EmployeeRepositoryHibernate {
       entityManager.persist(employee);
 
       transaction.commit();
-
-      entityManager.close();
     } catch (Exception e) {
       e.printStackTrace();
       try {
-        transactionManagerSetup.getUserTransaction().rollback();
+        TM.getUserTransaction().rollback();
       } catch (Exception rollbackException) {
         System.err.println("Rollback of transaction failed, trace follows!");
         rollbackException.printStackTrace(System.err);
       }
+    } finally {
+      if (entityManager != null && entityManager.isOpen()) {
+        entityManager.close();
+      }
     }
   }
 
+  @Test
   List<Employee> getEmployees() {
     try {
-      UserTransaction transaction = transactionManagerSetup.getUserTransaction();
+      UserTransaction transaction = TM.getUserTransaction();
 
       transaction.begin();
 
-      EntityManager entityManager = entityManagerFactory.createEntityManager();
+      EntityManager entityManager = JPA.createEntityManager();
 
       List<Employee> employees =
           entityManager.createQuery("select e from Employee e").getResultList();
@@ -82,18 +77,21 @@ class EmployeeRepositoryHibernate {
     }
   }
 
+  @Test
   void alterEmployee() {
     try {
-      UserTransaction transaction = transactionManagerSetup.getUserTransaction();
+      UserTransaction transaction = TM.getUserTransaction();
 
       transaction.begin();
 
-      EntityManager entityManager = entityManagerFactory.createEntityManager();
+      EntityManager entityManager = JPA.createEntityManager();
 
       List<Employee> employees =
           entityManager.createQuery("select e from Employee e").getResultList();
 
-      employees.stream().filter(e -> e.getId() == 1234).forEach(e -> e.setPhone(e.getPhone() + "666"));
+      employees.stream()
+          .filter(e -> e.getId() == 1234)
+          .forEach(e -> e.setPhone(e.getPhone() + "666"));
       transaction.commit();
 
       entityManager.close();
@@ -102,8 +100,4 @@ class EmployeeRepositoryHibernate {
     }
   }
 
-  void close() {
-    entityManagerFactory.close();
-    TransactionManagerServices.getTransactionManager().shutdown();
-  }
 }
