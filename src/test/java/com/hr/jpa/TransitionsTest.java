@@ -62,7 +62,7 @@ class TransitionsTest extends JpaTest {
       entityManager.close();
 
       // THEN
-      assertEmployeeIsPresent(expectedId);
+      assertNotNull(findById(expectedId));
     } finally {
       TM.rollback();
     }
@@ -193,7 +193,6 @@ class TransitionsTest extends JpaTest {
       int id = 1234;
       String oldFirstName = "OldName";
       String newFirstName = "NewName";
-      String newTemporaryFirstname = "NewTemporaryName";
 
       save(exampleEmployee(id, oldFirstName, "Doe"));
 
@@ -250,47 +249,5 @@ class TransitionsTest extends JpaTest {
     } finally {
       TM.rollback();
     }
-  }
-
-  // todo
-  void shouldRollbackPersistentEntityWhenExceptionIsThrown() throws Exception {
-    Integer id = 1;
-    EntityManager entityManager = null;
-    UserTransaction transaction = null;
-
-    try {
-      // Given
-      // An employee is persisted
-      transaction = TM.getUserTransaction();
-      entityManager = JPA.createEntityManager();
-
-      transaction.begin();
-
-      Employee employee = exampleEmployee(id, "Jane", "Foo");
-
-      entityManager.persist(employee);
-
-      // When
-      // The persisted entity changes
-      employee.setFirstName("Other");
-
-      throw new RuntimeException();
-    } finally {
-      if (transaction != null) {
-        transaction.getStatus();
-        transaction.rollback();
-
-        Employee employee = findById(id);
-        assertNull(employee);
-      }
-
-      if (entityManager != null) {
-        entityManager.close();
-      }
-    }
-  }
-
-  private void assertEmployeeIsPresent(Integer id) throws Exception {
-    assertNotNull(findById(id));
   }
 }

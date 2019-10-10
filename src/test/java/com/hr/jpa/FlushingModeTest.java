@@ -10,7 +10,7 @@ import javax.transaction.UserTransaction;
 import static com.hr.jpa.TestUtils.exampleEmployee;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class FlushingModeTests extends JpaTest {
+class FlushingModeTest extends JpaTest {
 
   @Test
   void shouldNotFlushBeforeQueryWhenFlushingModeCommit() throws Exception {
