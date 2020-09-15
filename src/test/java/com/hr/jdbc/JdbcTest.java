@@ -16,7 +16,7 @@ class JdbcTest {
 
   @BeforeEach
   void beforeEach() throws Exception {
-    ScriptRunner runner = new ScriptRunner(getConnection());
+    ScriptRunner runner = new ScriptRunner(DriverManager.getConnection("jdbc:h2:tcp://localhost/~/hr;DATABASE_TO_UPPER=false", "user", "sa"));
 
     runner.setAutoCommit(true);
     runner.setStopOnError(true);
@@ -27,7 +27,7 @@ class JdbcTest {
 
   @BeforeAll
   static void beforeAll() throws Exception {
-    server = Server.createTcpServer("-tcpAllowOthers").start();
+    server = Server.createTcpServer("-tcpAllowOthers", "-ifNotExists").start();
   }
 
   @AfterAll
@@ -36,7 +36,7 @@ class JdbcTest {
   }
 
   Connection getConnection() throws Exception{
-    return DriverManager.getConnection("jdbc:h2:tcp://localhost/~/hr;SCHEMA=hr", "user", "sa");
+    return DriverManager.getConnection("jdbc:h2:tcp://localhost/~/hr;SCHEMA=hr;DATABASE_TO_UPPER=false", "user", "sa");
   }
 
 }
