@@ -21,7 +21,7 @@
         <dependency>
             <groupId>org.hibernate</groupId>
             <artifactId>hibernate-entitymanager</artifactId>
-            <version>5.0.0.Final</version>
+            <version>5.4.0.Final</version>
         </dependency>
 
         <!--
@@ -32,6 +32,18 @@
             <groupId>org.codehaus.btm</groupId>
             <artifactId>btm</artifactId>
             <version>${btm.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.28</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>5.0.1</version>
         </dependency>
 
         <dependency>

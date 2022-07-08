@@ -6,6 +6,21 @@ import java.sql.Date;
 
 import static javax.persistence.EnumType.STRING;
 
+@NamedQueries(
+        @NamedQuery(
+                name = "get_employee_by_first_name_and_last_name",
+                query = "SELECT e " +
+                        "FROM Employee e " +
+                        "WHERE e.firstName = :firstName" +
+                        "  AND e.lastName = :lastName",
+                hints = {
+                        @QueryHint(
+                                name = "org.hibernate.readOnly",
+                                value = "true"
+                        )
+                }
+        )
+)
 @Entity
 @Table(name = "employees")
 public class Employee {
