@@ -3,6 +3,8 @@ package com.bank;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,8 +15,19 @@ import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ACIDRaceConditionTest extends HibernateTest {
+
+  private static final Logger log = LoggerFactory.getLogger(ACIDRaceConditionTest.class);
   private static final String BOB_IBAN = "Bob-456";
   private static final String ALICE_IBAN = "Alice-123";
+
+  // -- Test configuration details --
+  private static final boolean USE_JPA = false;
+
+  @Override
+  DataSourceProvider dataSourceProvider() {
+    return new PostgresqlDataSourceProvider();
+  }
+  // --
 
   @BeforeEach
   void createData() {
@@ -26,76 +39,87 @@ public class ACIDRaceConditionTest extends HibernateTest {
     destroyAccounts();
   }
 
+  // STEP 1: We create serial tests and everything works!
   @Test
   void testSerialExecution() {
-    assertEquals(10, getBalanceJPA(ALICE_IBAN));
-    assertEquals(0, getBalanceJPA(BOB_IBAN));
+    assertEquals(10, getBalanceUsingJPA(ALICE_IBAN));
+    assertEquals(0, getBalanceUsingJPA(BOB_IBAN));
 
-    transferUsingJPA(ALICE_IBAN, BOB_IBAN, 5);
+    transferWithoutTransaction(ALICE_IBAN, BOB_IBAN, 5);
 
-    assertEquals(5, getBalanceJPA(ALICE_IBAN));
-    assertEquals(5, getBalanceJPA(BOB_IBAN));
+    assertEquals(5, getBalanceUsingJPA(ALICE_IBAN));
+    assertEquals(5, getBalanceUsingJPA(BOB_IBAN));
 
-    transferUsingJPA(ALICE_IBAN, BOB_IBAN, 5);
+    transferWithoutTransaction(ALICE_IBAN, BOB_IBAN, 5);
 
-    assertEquals(0, getBalanceJPA(ALICE_IBAN));
-    assertEquals(10, getBalanceJPA(BOB_IBAN));
+    assertEquals(0, getBalanceUsingJPA(ALICE_IBAN));
+    assertEquals(10, getBalanceUsingJPA(BOB_IBAN));
 
-    transferUsingJPA(ALICE_IBAN, BOB_IBAN, 5);
+    transferWithoutTransaction(ALICE_IBAN, BOB_IBAN, 5);
 
-    assertEquals(0, getBalanceJPA(ALICE_IBAN));
-    assertEquals(10, getBalanceJPA(BOB_IBAN));
+    assertEquals(0, getBalanceUsingJPA(ALICE_IBAN));
+    assertEquals(10, getBalanceUsingJPA(BOB_IBAN));
   }
 
-  void transferUsingJPA(String fromIban, String toIban, int transferreDolars) {
-    Integer fromBalance = getBalanceJPA(fromIban);
+  // STEP 2: Whoops! We did not cover concurrency.
+  @Test
+  void testParallelExecutionWithoutTransaction() {
+    int aliceBefore = getBalanceUsingJPA(ALICE_IBAN);
+    int bobBefore = getBalanceUsingJPA(BOB_IBAN);
+    log.info("Before: Alice {}, Bob {}", aliceBefore, bobBefore);
+    assertEquals(10, aliceBefore);
+    assertEquals(0, bobBefore);
 
-    if (fromBalance >= transferreDolars) {
-      addJPA(fromIban, -transferreDolars);
-      addJPA(toIban, transferreDolars);
+    parallelExecutionWithoutTransaction();
+
+    int aliceAfter = getBalanceUsingJPA(ALICE_IBAN);
+    int bobAfter = getBalanceUsingJPA(BOB_IBAN);
+    log.info("After: Alice {}, Bob {}", aliceAfter, bobAfter);
+    assertEquals(0, aliceAfter);
+    assertEquals(10, bobAfter);
+  }
+
+  // STEP 3: OK, so there should be a transaction, now everything should be working.
+  @Test
+  void testParallelExecutionWithTransactionAndDefaultIsolationLevel() {
+    int aliceBefore = getBalanceUsingJPA(ALICE_IBAN);
+    int bobBefore = getBalanceUsingJPA(BOB_IBAN);
+    log.info("Before: Alice {}, Bob {}", aliceBefore, bobBefore);
+    assertEquals(10, aliceBefore);
+    assertEquals(0, bobBefore);
+
+    parallelExecutionWithTransactionAndDefaultIsolationLevel();
+
+    int aliceAfter = getBalanceUsingJPA(ALICE_IBAN);
+    int bobAfter = getBalanceUsingJPA(BOB_IBAN);
+    log.info("After: Alice {}, Bob {}", aliceAfter, bobAfter);
+    assertEquals(0, aliceAfter);
+    assertEquals(10, bobAfter);
+  }
+
+  // STEP 4: That still did not work! It is because of a lost update (Vlad says that; I would say that it was more a unrepeatable read). Let's learn about the isolation levels first...
+  @Test
+  void testParallelExecutionWithTransactionAndRepeatableReadIsolationLevel() {
+    assertEquals(10, getBalance(ALICE_IBAN));
+    assertEquals(0, getBalance(BOB_IBAN));
+
+    parallelExecutionWithTransactionAndRepeatableReadIsolationLevel();
+
+    assertEquals(0, getBalance(ALICE_IBAN));
+    assertEquals(10, getBalance(BOB_IBAN));
+  }
+
+  void transferWithoutTransaction(String fromIban, String toIban, int transferredDolars) {
+    // The entire operation is done without a single transaction.
+    Integer fromBalance = getBalance(fromIban);
+
+    if (fromBalance >= transferredDolars) {
+      add(fromIban, -transferredDolars);
+      add(toIban, transferredDolars);
     }
   }
 
-  void transferUsingJDBC(String fromIban, String toIban, int transferreDolars) {
-    Integer fromBalance = getBalanceJDBC(fromIban);
-
-    if (fromBalance >= transferreDolars) {
-      addJDBC(fromIban, -transferreDolars);
-      addJDBC(toIban, transferreDolars);
-    }
-  }
-
-  // -----------------------------------------------------------
-  // PARALLEL EXECUTION WITHOUT TRANSACTION
-  // 1. This uses JPA
-  // Using properties instead of datasource: OK
-  // Using datasource: NOK
-  @Test
-  void testParallelExecutionUsingJPA() {
-    assertEquals(10, getBalanceJPA(ALICE_IBAN));
-    assertEquals(0, getBalanceJPA(BOB_IBAN));
-
-    parallelExecution(true);
-
-    assertEquals(0, getBalanceJPA(ALICE_IBAN));
-    assertEquals(10, getBalanceJPA(BOB_IBAN));
-  }
-
-  // 1. This uses JDBC
-  // Using properties instead of datasource: OK
-  // Using datasource: NOK 
-  @Test
-  void testParallelExecutionUsingJDBC() {
-    assertEquals(10, getBalanceJPA(ALICE_IBAN));
-    assertEquals(0, getBalanceJPA(BOB_IBAN));
-
-    parallelExecution(false);
-
-    assertEquals(0, getBalanceJPA(ALICE_IBAN));
-    assertEquals(10, getBalanceJPA(BOB_IBAN));
-  }
-
-  public void parallelExecution(boolean useJPA) {
+  public void parallelExecutionWithoutTransaction() {
     int threadCount = 8;
 
     String fromIban = ALICE_IBAN;
@@ -109,44 +133,31 @@ public class ACIDRaceConditionTest extends HibernateTest {
       new Thread(() -> {
         awaitOnLatch(startLatch);
 
-        if (useJPA) {
-          transferUsingJPA(fromIban, toIban, transferredDollars);
-        } else {
-          transferUsingJDBC(fromIban, toIban, transferredDollars);
-        }
+        transferWithoutTransaction(fromIban, toIban, transferredDollars);
 
         endLatch.countDown();
       }).start();
     }
 
-    System.out.println("Starting threads...");
+    log.info("Starting threads...");
     startLatch.countDown();
     awaitOnLatch(endLatch);
   }
 
-  // -----------------------------------------------------------
-  // PARALLEL EXECUTION WITH TRANSACTION
-  // This uses JDBC
-  // Using properties instead of datasource: NOK
-  // Using datasource: NOK 
-  @Test
-  void testParallelExecutionWithTransaction() {
-    assertEquals(10, getBalanceJDBC(ALICE_IBAN));
-    assertEquals(0, getBalanceJDBC(BOB_IBAN));
-
-    parallelExecutionWithTransaction();
-
-    assertEquals(0, getBalanceJDBC(ALICE_IBAN));
-    assertEquals(10, getBalanceJDBC(BOB_IBAN));
+  public void parallelExecutionWithTransactionAndDefaultIsolationLevel() {
+    parallelExecutionWithTransaction(null);
   }
 
-  public void parallelExecutionWithTransaction() {
-    int threadCount = 8;
+  public void parallelExecutionWithTransactionAndRepeatableReadIsolationLevel() {
+    parallelExecutionWithTransaction(Connection.TRANSACTION_REPEATABLE_READ);
+  }
+
+  public void parallelExecutionWithTransaction(Integer isolationLevel) {
+    int threadCount = 2;
 
     String fromIban = ALICE_IBAN;
     String toIban = BOB_IBAN;
-    int transferredDollars = 5;
-    
+    int transferredDollars = 10;
 
     CountDownLatch workerThreadWaitsAfterReadingBalanceLatch = new CountDownLatch(threadCount);
     CountDownLatch workerThreadWriteBalanceLatch = new CountDownLatch(1);
@@ -156,17 +167,25 @@ public class ACIDRaceConditionTest extends HibernateTest {
       new Thread(() -> {
         try {
           doInJDBC(connection -> {
+            if (isolationLevel != null) {
+              setIsolationLevel(connection, isolationLevel);
+            }
             printConnectionDetails(connection);
 
             workerThreadWaitsAfterReadingBalanceLatch.countDown();
             awaitOnLatch(workerThreadWriteBalanceLatch);
-            System.out.println("Running thread");
 
-            int fromBalance = getBalanceJDBC(connection, fromIban);
+            log.info("start");
+
+            int fromBalance = getBalance(connection, fromIban);
+            log.info("getbalance: [{}: {}].", fromIban, fromBalance);
+
             if (fromBalance >= transferredDollars) {
               add(connection, fromIban, -transferredDollars);
               add(connection, toIban, transferredDollars);
             }
+
+            log.info("end");
           });
         } catch (Exception exception) {
           System.err.println("Error transferring money: " + exception.getMessage());
@@ -177,7 +196,7 @@ public class ACIDRaceConditionTest extends HibernateTest {
       }).start();
     }
 
-    System.out.println("Starting threads");
+    log.info("Starting threads");
     awaitOnLatch(workerThreadWaitsAfterReadingBalanceLatch);
     workerThreadWriteBalanceLatch.countDown();
     awaitOnLatch(allWorkerThreadsHaveFinishedLatch);
@@ -208,23 +227,13 @@ public class ACIDRaceConditionTest extends HibernateTest {
     });
   }
 
-  private Integer getBalanceJDBC(String iban) {
-    return doInJDBC(connection -> {
-      System.out.println(connection);
-      printConnectionDetails(connection);
-      return getBalanceJDBC(connection, iban);
-    });
+  private Integer getBalance(String iban) {
+    return USE_JPA
+            ? getBalanceUsingJPA(iban)
+            : getBalanceUsingJDBC(iban);
   }
 
-  private Integer getBalanceJPA(String iban) {
-    return doInJpa(entityManager -> {
-      return entityManager.createQuery("SELECT a.balance FROM Account a WHERE a.iban = :iban", Integer.class)
-          .setParameter("iban", iban)
-          .getSingleResult();
-    });
-  }
-
-  private Integer getBalanceJDBC(Connection connection, String iban) {
+  private Integer getBalance(Connection connection, String iban) {
     try (PreparedStatement statement = connection.prepareStatement("SELECT balance FROM account WHERE iban = ?")) {
 
       statement.setString(1, iban);
@@ -239,9 +248,46 @@ public class ACIDRaceConditionTest extends HibernateTest {
     throw new IllegalArgumentException(String.format("Could not get balance for account IBAN [%s].", iban));
   }
 
+  private void add(String iban, int dollars) {
+    if (USE_JPA) {
+      addJPA(iban, dollars);
+    } else {
+      addJDBC(iban, dollars);
+    }
+  }
+
+  private void add(Connection connection, String iban, int balance) {
+    log.info("add: [{}: {} + {}].", iban, getBalance(connection, iban), balance);
+
+    try (PreparedStatement statement = connection.prepareStatement("UPDATE account SET balance = balance + ? WHERE iban = ?")) {
+      statement.setInt(1, balance);
+      statement.setString(2, iban);
+
+      statement.executeUpdate();
+    } catch (SQLException exception) {
+      throw new IllegalStateException(exception);
+    }
+
+    log.info("after add: [{}: {}].", iban, getBalance(connection, iban));
+  }
+
+  private Integer getBalanceUsingJDBC(String iban) {
+    return doInJDBC(connection -> {
+      printConnectionDetails(connection);
+      return getBalance(connection, iban);
+    });
+  }
+
+  private Integer getBalanceUsingJPA(String iban) {
+    return doInJpa(entityManager -> {
+      return entityManager.createQuery("SELECT a.balance FROM Account a WHERE a.iban = :iban", Integer.class)
+          .setParameter("iban", iban)
+          .getSingleResult();
+    });
+  }
+
   private void addJDBC(String iban, int dollars) {
     doInJDBC(connection -> {
-      System.out.println(connection);
       printConnectionDetails(connection);
       add(connection, iban, dollars);
     });
@@ -256,16 +302,14 @@ public class ACIDRaceConditionTest extends HibernateTest {
     });
   }
 
-  private void add(Connection connection, String iban, int balance) {
-    try (PreparedStatement statement = connection.prepareStatement("UPDATE account SET balance = balance + ? WHERE iban = ?")) {
-      statement.setInt(1, balance);
-      statement.setString(2, iban);
-
-      statement.executeUpdate();
+  private void setIsolationLevel(Connection connection, int level) {
+    try {
+      connection.setTransactionIsolation(level);
     } catch (SQLException exception) {
-      throw new IllegalStateException(exception);
+      throw new RuntimeException(exception);
     }
   }
+
   private void printConnectionDetails(Connection connection) {
     int isolationLevelIntegerValue;
     boolean autoCommit;
@@ -293,6 +337,6 @@ public class ACIDRaceConditionTest extends HibernateTest {
         break;
     }
 
-    System.out.println("Connection: " + connection + "; transaction isolation level: " + isolationLevelStringValue + "; autocommit: " + autoCommit);
+    log.info("Connection: {}; transaction isolation level: {}; autocommit: {}", connection, isolationLevelStringValue, autoCommit);
   }
 }

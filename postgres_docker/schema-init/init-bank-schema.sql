@@ -1,0 +1,19 @@
+CREATE USER bank WITH PASSWORD 'password';
+
+CREATE DATABASE bank;
+GRANT ALL PRIVILEGES ON DATABASE "bank" TO bank;
+
+\connect bank
+
+CREATE TABLE account
+(
+    iban    VARCHAR    NOT NULL PRIMARY KEY,
+    owner   VARCHAR NOT NULL,
+    balance INTEGER     NOT NULL
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON ALL TABLES IN SCHEMA public
+    TO bank;
+
+ALTER TABLE account OWNER TO bank;
