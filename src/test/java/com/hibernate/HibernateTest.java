@@ -1,4 +1,4 @@
-package com.hr.hibernate;
+package com.hibernate;
 
 import com.hr.Employee;
 import org.hibernate.Session;

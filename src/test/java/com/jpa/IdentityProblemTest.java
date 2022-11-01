@@ -1,4 +1,4 @@
-package com.hr.jpa;
+package com.jpa;
 
 import com.hr.Employee;
 import org.junit.jupiter.api.Test;
@@ -9,7 +9,7 @@ import javax.transaction.UserTransaction;
 import java.util.HashSet;
 import java.util.Set;
 
-import static com.hr.jpa.TestUtils.exampleEmployee;
+import static com.jpa.TestUtils.exampleEmployee;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**

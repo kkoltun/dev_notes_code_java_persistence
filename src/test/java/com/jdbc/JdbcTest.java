@@ -1,4 +1,4 @@
-package com.hr.jdbc;
+package com.jdbc;
 
 import org.apache.ibatis.jdbc.ScriptRunner;
 import org.h2.tools.Server;

@@ -1,8 +1,6 @@
-package com.hr.jdbc;
+package com.jdbc;
 
 import com.hr.Employee;
-import com.hr.JobId;
-import org.assertj.core.api.Condition;
 import org.junit.jupiter.api.Test;
 
 import java.sql.*;
@@ -10,7 +8,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.hr.jdbc.QueryUtils.employeeFromResultSet;
+import static com.jdbc.QueryUtils.employeeFromResultSet;
 import static java.lang.String.format;
 import static java.util.Optional.empty;
 import static org.assertj.core.api.Assertions.assertThat;

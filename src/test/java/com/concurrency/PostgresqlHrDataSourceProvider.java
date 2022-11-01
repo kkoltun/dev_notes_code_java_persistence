@@ -1,10 +1,13 @@
-package com.bank;
+package com.concurrency;
 
+import com.hr.Employee;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;
+import java.util.Collections;
+import java.util.List;
 
-public class PostgresqlDataSourceProvider implements DataSourceProvider {
+public class PostgresqlHrDataSourceProvider implements DataSourceProvider {
     @Override
     public String hibernateDialect() {
         return "org.hibernate.dialect.PostgreSQLDialect";
@@ -23,16 +26,21 @@ public class PostgresqlDataSourceProvider implements DataSourceProvider {
 
     @Override
     public String url() {
-        return "jdbc:postgresql://localhost:15432/bank";
+        return "jdbc:postgresql://localhost:15432/hr";
     }
 
     @Override
     public String user() {
-        return "bank";
+        return "hr";
     }
 
     @Override
     public String password() {
         return "password";
+    }
+
+    @Override
+    public List<Class<?>> annotatedClasses() {
+        return Collections.singletonList(Employee.class);
     }
 }

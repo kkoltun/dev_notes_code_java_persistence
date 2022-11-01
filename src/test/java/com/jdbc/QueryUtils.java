@@ -1,4 +1,4 @@
-package com.hr.jdbc;
+package com.jdbc;
 
 import com.hr.Employee;
 import com.hr.JobId;

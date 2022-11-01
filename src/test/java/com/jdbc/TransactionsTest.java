@@ -1,4 +1,4 @@
-package com.hr.jdbc;
+package com.jdbc;
 
 import com.hr.Employee;
 import com.hr.PayrollService;
@@ -9,7 +9,7 @@ import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.hr.jdbc.QueryUtils.employeeFromResultSet;
+import static com.jdbc.QueryUtils.employeeFromResultSet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class TransactionsTest extends JdbcTest {

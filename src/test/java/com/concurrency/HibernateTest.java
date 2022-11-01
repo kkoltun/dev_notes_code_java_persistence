@@ -1,5 +1,7 @@
-package com.bank;
+package com.concurrency;
 
+import com.bank.Account;
+import com.hr.Employee;
 import org.hibernate.FlushMode;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
@@ -28,6 +30,8 @@ public abstract class HibernateTest {
 
     abstract DataSourceProvider dataSourceProvider();
 
+    abstract boolean recreateBeforeEachTest();
+
     @BeforeEach
     void beforeEach() {
         DataSourceProvider dataSourceProvider = dataSourceProvider();
@@ -42,7 +46,9 @@ public abstract class HibernateTest {
             properties.setProperty("hibernate.connection.password", dataSourceProvider().password());
         }
 
-        properties.put("hibernate.hbm2ddl.auto", "create-drop");
+        if (recreateBeforeEachTest()) {
+            properties.put("hibernate.hbm2ddl.auto", "create-drop");
+        }
         properties.setProperty("hibernate.show_sql", "true");
 
         BootstrapServiceRegistry bootstrapServiceRegistry = new BootstrapServiceRegistryBuilder().build();
@@ -52,7 +58,9 @@ public abstract class HibernateTest {
                 .build();
 
         MetadataSources metadataSources = new MetadataSources(standardServiceRegistry);
-        metadataSources.addAnnotatedClass(Account.class);
+        for (Class<?> annotatedClass : dataSourceProvider().annotatedClasses()) {
+            metadataSources.addAnnotatedClass(annotatedClass);
+        }
 
         Metadata metadata = metadataSources.buildMetadata();
 
@@ -101,7 +109,6 @@ public abstract class HibernateTest {
 
         return result;
     }
-
     protected void doInJpa(Consumer<EntityManager> function) {
         EntityManager entitymanager = null;
         EntityTransaction transaction = null;
@@ -193,6 +200,45 @@ public abstract class HibernateTest {
             transaction = session.beginTransaction();
 
             session.doWork(callable::accept);
+
+            if (!transaction.getRollbackOnly()) {
+                transaction.commit();
+            } else {
+                try {
+                    transaction.rollback();
+                } catch (Exception e) {
+                    System.err.println("Rollback failure: " + e.getMessage());
+                    e.printStackTrace(System.err);
+                }
+            }
+        } catch (Throwable t) {
+            if (transaction != null && transaction.isActive()) {
+                try {
+                    transaction.rollback();
+                } catch (Exception e) {
+                    System.err.println("Rollback failure: " + e.getMessage());
+                    e.printStackTrace(System.err);
+                }
+            }
+            throw t;
+        } finally {
+            if (session != null) {
+                session.close();
+            }
+        }
+    }
+
+    protected void doInHibernate(Consumer<Session> callable, boolean readOnly, FlushMode flushMode) {
+        Session session = null;
+        Transaction transaction = null;
+        try {
+            session = entityManagerFactory.unwrap(SessionFactory.class).openSession();
+            session.setDefaultReadOnly(readOnly);
+            session.setHibernateFlushMode(flushMode);
+
+            transaction = session.beginTransaction();
+
+            callable.accept(session);
 
             if (!transaction.getRollbackOnly()) {
                 transaction.commit();

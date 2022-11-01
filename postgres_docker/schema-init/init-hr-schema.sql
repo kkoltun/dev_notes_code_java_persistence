@@ -1,4 +1,12 @@
 -- Best used for learning purposes. Original developer also has an ER diagram available at https://dbseminar.r61.net/node/32
+-- create user and db
+CREATE USER hr WITH PASSWORD 'password';
+
+CREATE DATABASE hr;
+GRANT ALL PRIVILEGES ON DATABASE "hr" TO hr;
+
+\connect hr
+
 --create tables
 CREATE TABLE regions
 ( region_id      SERIAL primary key,
@@ -2376,3 +2384,7 @@ CREATE INDEX loc_state_province_ix
 
 CREATE INDEX loc_country_ix
     ON locations (country_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON ALL TABLES IN SCHEMA public
+    TO hr;

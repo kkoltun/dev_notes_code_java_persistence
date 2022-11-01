@@ -1,5 +1,6 @@
-package com.bank;
+package com.concurrency;
 
+import com.bank.Account;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,8 +25,13 @@ public class ACIDRaceConditionTest extends HibernateTest {
   private static final boolean USE_JPA = false;
 
   @Override
+  boolean recreateBeforeEachTest() {
+    return true;
+  }
+
+  @Override
   DataSourceProvider dataSourceProvider() {
-    return new PostgresqlDataSourceProvider();
+    return new PostgresqlBankDataSourceProvider();
   }
   // --
 

@@ -1,8 +1,11 @@
-package com.bank;
+package com.concurrency;
 
+import com.bank.Account;
 import com.mysql.cj.jdbc.MysqlDataSource;
 
 import javax.sql.DataSource;
+import java.util.Collections;
+import java.util.List;
 
 public class MySqlDataSourceProvider implements DataSourceProvider {
   @Override
@@ -34,5 +37,10 @@ public class MySqlDataSourceProvider implements DataSourceProvider {
   @Override
   public String password() {
     return "password";
+  }
+
+  @Override
+  public List<Class<?>> annotatedClasses() {
+    return Collections.singletonList(Account.class);
   }
 }

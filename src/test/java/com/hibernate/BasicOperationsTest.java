@@ -1,11 +1,8 @@
-package com.hr.hibernate;
+package com.hibernate;
 
 import com.hr.Employee;
-import com.hr.JobId;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
-import java.sql.Date;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;

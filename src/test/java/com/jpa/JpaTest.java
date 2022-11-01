@@ -1,4 +1,4 @@
-package com.hr.jpa;
+package com.jpa;
 
 import com.hr.Employee;
 import org.junit.jupiter.api.AfterAll;

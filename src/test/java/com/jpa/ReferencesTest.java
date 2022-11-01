@@ -1,4 +1,4 @@
-package com.hr.jpa;
+package com.jpa;
 
 import com.hr.Employee;
 import org.hibernate.Hibernate;
@@ -10,7 +10,7 @@ import javax.persistence.EntityNotFoundException;
 import javax.persistence.PersistenceUnitUtil;
 import javax.transaction.UserTransaction;
 
-import static com.hr.jpa.TestUtils.exampleEmployee;
+import static com.jpa.TestUtils.exampleEmployee;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ReferencesTest extends JpaTest {

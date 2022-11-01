@@ -1,4 +1,4 @@
-package com.hr.jpa;
+package com.jpa;
 
 import com.hr.Employee;
 import org.junit.jupiter.api.Test;
@@ -7,7 +7,7 @@ import javax.persistence.EntityManager;
 import javax.persistence.FlushModeType;
 import javax.transaction.UserTransaction;
 
-import static com.hr.jpa.TestUtils.exampleEmployee;
+import static com.jpa.TestUtils.exampleEmployee;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class FlushingModeTest extends JpaTest {

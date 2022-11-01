@@ -1,4 +1,4 @@
-package com.hr.jpa;
+package com.jpa;
 
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;

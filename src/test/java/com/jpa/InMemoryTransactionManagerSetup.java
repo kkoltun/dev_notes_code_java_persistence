@@ -1,11 +1,10 @@
-package com.hr.jpa;
+package com.jpa;
 
 import bitronix.tm.TransactionManagerServices;
 import bitronix.tm.resource.jdbc.PoolingDataSource;
 
 import javax.naming.Context;
 import javax.naming.InitialContext;
-import javax.sql.DataSource;
 import javax.transaction.Status;
 import javax.transaction.UserTransaction;
 

@@ -1,5 +1,7 @@
-package com.hr;
+package com;
 
+import com.hr.Employee;
+import com.hr.PayrollService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
