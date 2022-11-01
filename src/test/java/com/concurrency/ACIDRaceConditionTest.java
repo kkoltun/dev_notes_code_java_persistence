@@ -208,14 +208,6 @@ public class ACIDRaceConditionTest extends HibernateTest {
     awaitOnLatch(allWorkerThreadsHaveFinishedLatch);
   }
 
-  private static void awaitOnLatch(CountDownLatch latch) {
-    try {
-      latch.await();
-    } catch (InterruptedException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
   private void createAccounts() {
     doInJpa(entityManager -> {
       Account bobAccount = new Account(BOB_IBAN, "Bob", 0);
