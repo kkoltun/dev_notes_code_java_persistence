@@ -1,6 +1,7 @@
 package com.concurrency;
 
 import com.hr.Employee;
+import com.hr.JobId;
 import org.hibernate.*;
 import org.hibernate.cfg.AvailableSettings;
 import org.junit.jupiter.api.Test;
@@ -11,8 +12,14 @@ import org.slf4j.LoggerFactory;
 import javax.persistence.LockModeType;
 import javax.persistence.LockTimeoutException;
 import java.util.Collections;
+import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
+import static com.hr.JobId.FI_ACCOUNT;
+import static com.hr.JobId.IT_PROG;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class PessimisticLockingExamples extends HibernateTest {
@@ -86,12 +93,8 @@ public class PessimisticLockingExamples extends HibernateTest {
     }
 
     @Test
-    void sharedLockAllowsOtherSharedLock() {
-        class Context {
-            Employee employee;
-        }
-
-        RunnableWithContext<Context> getEmployeeOneWithSharedLockStep = (session, context) -> {
+    void sharedLockAllowsOtherSharedLock() throws Throwable {
+        SessionRunnableWithContext<EmployeeContext> getEmployeeOneWithSharedLockStep = (session, context) -> {
             // Acquire shared lock on Employee #100; use NOWAIT to detect any conflicts right away.
             Employee employee = session.find(Employee.class, 100,
                     LockModeType.PESSIMISTIC_READ,
@@ -102,13 +105,13 @@ public class PessimisticLockingExamples extends HibernateTest {
             assertNotNull(employee);
             context.employee = employee;
         };
-        RunnableWithContext<Context> checkStep = (session, context) -> {
+        SessionRunnableWithContext<EmployeeContext> checkStep = (session, context) -> {
             assertNotNull(context.employee);
             assertTrue(session.isOpen());
             assertTrue(session.contains(context.employee));
         };
 
-        TwoThreadsWithTransactions<Context> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, Context::new)
+        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmployeeContext::new)
                 .threadOneStartsWith(getEmployeeOneWithSharedLockStep)
                 .thenThreadTwo(getEmployeeOneWithSharedLockStep)
                 .thenThreadOne(checkStep)
@@ -119,12 +122,8 @@ public class PessimisticLockingExamples extends HibernateTest {
     }
 
     @Test
-    void sharedLockDoesNotAllowsOtherExclusiveLock() {
-        class Context {
-            Employee employee;
-        }
-
-        RunnableWithContext<Context> getEmployeeOneWithSharedLock = (session, context) -> {
+    void sharedLockDoesNotAllowsOtherExclusiveLock() throws Throwable {
+        SessionRunnableWithContext<EmployeeContext> getEmployeeOneWithSharedLock = (session, context) -> {
             // Acquire shared lock on Employee #100; use NOWAIT to detect any conflicts right away.
             Employee employee = session.find(Employee.class, 100,
                     LockModeType.PESSIMISTIC_READ,
@@ -136,7 +135,7 @@ public class PessimisticLockingExamples extends HibernateTest {
             context.employee = employee;
         };
 
-        RunnableWithContext<Context> failAtGettingExclusiveLock = (session, context) -> {
+        SessionRunnableWithContext<EmployeeContext> failAtGettingExclusiveLock = (session, context) -> {
             // Acquire an exclusive lock on Employee #100; use NOWAIT to detect any conflicts right away.
             Executable getExclusiveLock = () -> session.find(Employee.class, 100,
                     LockModeType.PESSIMISTIC_WRITE,
@@ -147,9 +146,74 @@ public class PessimisticLockingExamples extends HibernateTest {
             assertThrows(LockTimeoutException.class, getExclusiveLock);
         };
 
-        TwoThreadsWithTransactions<Context> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, Context::new)
+        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmployeeContext::new)
                 .threadOneStartsWith(getEmployeeOneWithSharedLock)
                 .thenThreadTwo(failAtGettingExclusiveLock)
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
+    @Test
+    void predicateLockDoesNotAllowsOtherPredicateLockInTheSameRange() throws Throwable {
+        LockOptions pessimisticNoWaitLock = new LockOptions();
+        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
+        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
+
+        // Acquire lock, use NOWAIT to detect any conflicts right away.
+        BiFunction<Session, JobId, List<Employee>> getEmployeesByJobId = (session, jobId) -> session.createQuery("" +
+                        "SELECT e " +
+                        "FROM Employee e " +
+                        "WHERE e.jobId = :jobId", Employee.class)
+                .setLockOptions(pessimisticNoWaitLock)
+                .setParameter("jobId", jobId)
+                .getResultList();
+
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = getEmployeesByJobId.apply(session, IT_PROG);
+            assertThat(programmers).isNotEmpty();
+        };
+
+        SessionRunnableWithContext<EmptyContext> getAccountantsWithLock = (session, context) -> {
+            assertThrows(LockTimeoutException.class, () -> getEmployeesByJobId.apply(session, IT_PROG), "Caught LockTimeoutException exception.");
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                .thenThreadTwo(getAccountantsWithLock)
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
+    @Test
+    void predicateLockAllowsAnotherLockOnDifferentRange() throws Throwable {
+        LockOptions pessimisticNoWaitLock = new LockOptions();
+        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
+        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
+
+        // Acquire lock, use NOWAIT to detect any conflicts right away.
+        BiFunction<Session, JobId, List<Employee>> getEmployeesByJobId = (session, jobId) -> session.createQuery("" +
+                        "SELECT e " +
+                        "FROM Employee e " +
+                        "WHERE e.jobId = :jobId", Employee.class)
+                .setLockOptions(pessimisticNoWaitLock)
+                .setParameter("jobId", jobId)
+                .getResultList();
+
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = getEmployeesByJobId.apply(session, IT_PROG);
+            assertThat(programmers).isNotEmpty();
+        };
+
+        SessionRunnableWithContext<EmptyContext> getAccountantsWithLock = (session, context) -> {
+            List<Employee> accountants = getEmployeesByJobId.apply(session, FI_ACCOUNT);
+            assertThat(accountants).isNotEmpty();
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                .thenThreadTwo(getAccountantsWithLock)
                 .thenFinish();
 
         twoThreadsWithTransactions.run();
@@ -165,5 +229,17 @@ public class PessimisticLockingExamples extends HibernateTest {
     // In these tests, we need a non-read-only behavior.
     void doInHibernate(Consumer<Session> callable) {
         doInHibernate(callable, false, FlushMode.AUTO);
+    }
+
+    private static class EmployeeContext {
+        Employee employee;
+    }
+
+    private static class EmployeesContext {
+        List<Employee> employees;
+    }
+
+    private static class EmptyContext {
+
     }
 }
