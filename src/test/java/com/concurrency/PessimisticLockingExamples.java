@@ -2,7 +2,10 @@ package com.concurrency;
 
 import com.hr.Employee;
 import com.hr.JobId;
-import org.hibernate.*;
+import org.hibernate.FlushMode;
+import org.hibernate.LockMode;
+import org.hibernate.LockOptions;
+import org.hibernate.Session;
 import org.hibernate.cfg.AvailableSettings;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -11,6 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.persistence.LockModeType;
 import javax.persistence.LockTimeoutException;
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -111,7 +116,8 @@ public class PessimisticLockingExamples extends HibernateTest {
             assertTrue(session.contains(context.employee));
         };
 
-        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmployeeContext::new)
+        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory,
+                        EmployeeContext::new)
                 .threadOneStartsWith(getEmployeeOneWithSharedLockStep)
                 .thenThreadTwo(getEmployeeOneWithSharedLockStep)
                 .thenThreadOne(checkStep)
@@ -146,7 +152,8 @@ public class PessimisticLockingExamples extends HibernateTest {
             assertThrows(LockTimeoutException.class, getExclusiveLock);
         };
 
-        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmployeeContext::new)
+        TwoThreadsWithTransactions<EmployeeContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory,
+                        EmployeeContext::new)
                 .threadOneStartsWith(getEmployeeOneWithSharedLock)
                 .thenThreadTwo(failAtGettingExclusiveLock)
                 .thenFinish();
@@ -214,6 +221,50 @@ public class PessimisticLockingExamples extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwo(getAccountantsWithLock)
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
+    @Test
+    void predicateLockBlocksUpdate() throws Throwable {
+        LockOptions pessimisticNoWaitLock = new LockOptions();
+        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
+        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
+
+        // Acquire lock, use NOWAIT to detect any conflicts right away.
+        Function<Session, List<Employee>> getProgrammers = session -> session.createQuery("" +
+                        "SELECT e " +
+                        "FROM Employee e " +
+                        "WHERE e.jobId = :jobId", Employee.class)
+                .setLockOptions(pessimisticNoWaitLock)
+                .setParameter("jobId", IT_PROG)
+                .getResultList();
+
+        Function<Session, Integer> updateProgrammers = session -> session.createQuery("" +
+                        "UPDATE Employee e " +
+                        "SET e.salary = 1.5 * e.salary " +
+                        "WHERE e.jobId = :jobId")
+                .setParameter("jobId", IT_PROG)
+                .executeUpdate();
+
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = getProgrammers.apply(session);
+            BigDecimal totalSalary = programmers.stream()
+                    .map(Employee::getSalary)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            log.info("Total salary of programmers: " + totalSalary);
+            assertThat(programmers).isNotEmpty();
+        };
+
+        SessionRunnableWithContext<EmptyContext> getAccountantsWithLock = (session, context) -> {
+            int updated = updateProgrammers.apply(session);
+            assertThat(updated).isNotZero();
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                .thenThreadTwoTimeoutsOn(getAccountantsWithLock, Duration.ofSeconds(3))
                 .thenFinish();
 
         twoThreadsWithTransactions.run();

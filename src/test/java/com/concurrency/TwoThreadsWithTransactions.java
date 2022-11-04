@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.persistence.EntityManagerFactory;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -37,14 +38,15 @@ public class TwoThreadsWithTransactions<T> {
     private final List<SessionRunnableWithContext<T>> threadTwoSteps;
 
     private final CountDownLatch startLatch = new CountDownLatch(1);
-    private final CountDownLatch endLatch = new CountDownLatch(2);
+    private final CountDownLatch finishLatch = new CountDownLatch(2);
+    private final CountDownLatch threadsFinishedLatch = new CountDownLatch(2);
 
     private TwoThreadsWithTransactions(EntityManagerFactory entityManagerFactory,
-                                       Supplier<T> contextSupplier,
-                                       String threadOneName,
-                                       List<SessionRunnableWithContext<T>> threadOneSteps,
-                                       String threadTwoName,
-                                       List<SessionRunnableWithContext<T>> threadTwoSteps) {
+            Supplier<T> contextSupplier,
+            String threadOneName,
+            List<SessionRunnableWithContext<T>> threadOneSteps,
+            String threadTwoName,
+            List<SessionRunnableWithContext<T>> threadTwoSteps) {
         if (threadOneSteps.size() != threadTwoSteps.size()) {
             throw new IllegalArgumentException("Uneven number of steps.");
         }
@@ -76,40 +78,47 @@ public class TwoThreadsWithTransactions<T> {
             log.info("{} INIT: Awaiting on the start", threadOneName);
             awaitOnLatch(startLatch);
 
-                for (int i = 0; i < steps; ++i) {
-                    try {
-                        if (i != 0) {
-                            log.info("{} #{}: await", threadOneName, i);
-                            awaitOnLatch(threadOneLatches.get(i));
-                        }
+            for (int i = 0; i < steps; ++i) {
+                try {
+                    if (i != 0) {
+                        log.info("{} #{}: await", threadOneName, i);
+                        awaitOnLatch(threadOneLatches.get(i));
+                    }
 
-                        if (!error.isEmpty()) {
-                            log.info("{} #{}: detected error in another thread; exit}", threadOneName, i);
+                    if (!error.isEmpty()) {
+                        log.info("{} #{}: detected error in another thread; exit}", threadOneName, i);
 
-                            // Thread #2 should already be dead, so unlock shutdown.
-                            endLatch.countDown();
-                            return;
-                        }
-
-                        log.info("{} #{} execute", threadOneName, i);
-                        threadOneSteps.get(i).accept(session, threadContext);
-
-                        // Let the thread #2 do the step i.
-                        threadTwoLatches.get(i).countDown();
-                    } catch (Throwable throwable) {
-                        log.info("{} #{} error {}", threadOneName, i, throwable.getMessage());
-                        error.add(new Error(i, throwable, true));
-
-                        // Unlock thread #2.
-                        threadTwoLatches.get(i).countDown();
-
-                        // Unlock shutdown
-                        endLatch.countDown();
+                        // Thread #2 should already be dead, so unlock shutdown.
+                        threadsFinishedLatch.countDown();
                         return;
                     }
-                }
 
-                endLatch.countDown();
+                    log.info("{} #{} execute", threadOneName, i);
+                    threadOneSteps.get(i).accept(session, threadContext);
+
+                    // Let the thread #2 do the step i.
+                    threadTwoLatches.get(i).countDown();
+                } catch (Throwable throwable) {
+                    log.info("{} #{} error {}", threadOneName, i, throwable.getMessage());
+                    error.add(new Error(i, throwable, true));
+
+                    // Unlock thread #2.
+                    threadTwoLatches.get(i).countDown();
+
+                    // Unlock shutdown
+                    finishLatch.countDown();
+                    threadsFinishedLatch.countDown();
+                    return;
+                }
+            }
+
+            log.info("{} FINISH: Awaiting on the finish", threadOneName);
+            finishLatch.countDown();
+            awaitOnLatch(finishLatch);
+
+            threadsFinishedLatch.countDown();
+
+            log.info("{} FINISH: Finished", threadOneName);
         })).start();
 
         new Thread(() -> doInHibernate(session -> {
@@ -127,7 +136,7 @@ public class TwoThreadsWithTransactions<T> {
                         log.info("{} #{}: detected error in another thread; exit}", threadTwoName, i);
 
                         // Thread #1 should already be dead, so unlock shutdown.
-                        endLatch.countDown();
+                        threadsFinishedLatch.countDown();
                         return;
                     }
 
@@ -139,7 +148,7 @@ public class TwoThreadsWithTransactions<T> {
                     }
                 } catch (Throwable throwable) {
                     log.info("{} #{} error {}", threadTwoName, i, throwable.getMessage());
-                    error.add(new Error(i, throwable, true));
+                    error.add(new Error(i, throwable, false));
 
                     // Unlock thread #1 if neccessary.
                     if (i != steps - 1) {
@@ -147,17 +156,24 @@ public class TwoThreadsWithTransactions<T> {
                     }
 
                     // Unlock shutdown
-                    endLatch.countDown();
+                    finishLatch.countDown();
+                    threadsFinishedLatch.countDown();
                     return;
                 }
             }
 
-            endLatch.countDown();
+            log.info("{} FINISH: Awaiting on the finish", threadTwoName);
+            finishLatch.countDown();
+            awaitOnLatch(finishLatch);
+
+            threadsFinishedLatch.countDown();
+
+            log.info("{} FINISH: Finished", threadTwoName);
         })).start();
 
         log.info("Start threads");
         startLatch.countDown();
-        awaitOnLatch(endLatch);
+        awaitOnLatch(threadsFinishedLatch);
 
         if (error.isEmpty()) {
             log.info("Threads finished successfully");
@@ -290,6 +306,10 @@ public class TwoThreadsWithTransactions<T> {
                 return builder.addThreadOneStep(step);
             }
 
+            public ThreadTwoStepBuilder<F> thenThreadOneTimeoutsOn(SessionRunnableWithContext<F> step, Duration duration) {
+                return builder.addThreadOneStep(new TimeoutSessionRunnableWithContext<>(step, duration));
+            }
+
             public TwoThreadsWithTransactions<F> thenFinish() {
                 return builder.build();
             }
@@ -304,6 +324,10 @@ public class TwoThreadsWithTransactions<T> {
 
             public ThreadOneStepBuilder<F> thenThreadTwo(SessionRunnableWithContext<F> step) {
                 return builder.addThreadTwoStep(step);
+            }
+
+            public ThreadOneStepBuilder<F> thenThreadTwoTimeoutsOn(SessionRunnableWithContext<F> step, Duration duration) {
+                return builder.addThreadTwoStep(new TimeoutSessionRunnableWithContext<>(step, duration));
             }
         }
     }
