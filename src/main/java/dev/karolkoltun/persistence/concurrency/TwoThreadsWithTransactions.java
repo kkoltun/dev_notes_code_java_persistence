@@ -180,10 +180,12 @@ public class TwoThreadsWithTransactions<T> {
 
             log.info("{} FINISH: Finished", threadName);
 
-            if (!transaction.getRollbackOnly()) {
-                transaction.commit();
-            } else {
-                tryRollback(transaction);
+            if (transaction.isActive()) {
+                if (!transaction.getRollbackOnly()) {
+                    transaction.commit();
+                } else {
+                    tryRollback(transaction);
+                }
             }
         } catch (Throwable t) {
             tryRollback(transaction);
