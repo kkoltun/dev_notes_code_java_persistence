@@ -1,4 +1,4 @@
-package dev.karolkoltun.persistence.concurrency.pessimistic;
+package dev.karolkoltun.persistence.concurrency.pessimistic.locking;
 
 import dev.karolkoltun.persistence.DataSourceProvider;
 import dev.karolkoltun.persistence.entity.Employee;

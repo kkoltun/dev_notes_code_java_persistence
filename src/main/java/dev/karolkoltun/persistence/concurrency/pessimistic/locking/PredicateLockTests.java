@@ -1,4 +1,4 @@
-package dev.karolkoltun.persistence.concurrency.pessimistic;
+package dev.karolkoltun.persistence.concurrency.pessimistic.locking;
 
 import dev.karolkoltun.persistence.*;
 import dev.karolkoltun.persistence.concurrency.EmptyContext;
