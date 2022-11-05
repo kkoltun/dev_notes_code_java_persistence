@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static com.concurrency.HibernateTest.awaitOnLatch;
@@ -30,158 +29,157 @@ import static com.concurrency.HibernateTest.awaitOnLatch;
 public class TwoThreadsWithTransactions<T> {
     private static final Logger log = LoggerFactory.getLogger(TwoThreadsWithTransactions.class);
 
+    static class ThreadStep<R> {
+        private final Runnable fireNextStepRunnable;
+
+        private final Runnable blockUntilFiredRunnable;
+        private final int stepCount;
+        private final SessionRunnableWithContext<R> task;
+
+        public ThreadStep(Runnable fireNextStepRunnable, Runnable blockUntilFiredRunnable, int stepCount, SessionRunnableWithContext<R> task) {
+            this.fireNextStepRunnable = fireNextStepRunnable;
+            this.blockUntilFiredRunnable = blockUntilFiredRunnable;
+            this.stepCount = stepCount;
+            this.task = task;
+        }
+
+        public void fireNextStepOnAnotherThread() {
+            fireNextStepRunnable.run();
+        }
+
+        public void blockUntilFiredByAnotherThread() {
+            blockUntilFiredRunnable.run();
+        }
+
+        public int getStepIndex() {
+            return stepCount;
+        }
+
+        public SessionRunnableWithContext<R> getTask() {
+            return task;
+        }
+    }
+
     private final EntityManagerFactory entityManagerFactory;
     private final Supplier<T> contextSupplier;
     private final String threadOneName;
-    private final List<SessionRunnableWithContext<T>> threadOneSteps;
+    private final List<ThreadStep<T>> threadOneSteps = new ArrayList<>();
     private final String threadTwoName;
-    private final List<SessionRunnableWithContext<T>> threadTwoSteps;
-
+    private final List<ThreadStep<T>> threadTwoSteps = new ArrayList<>();
     private final CountDownLatch startLatch = new CountDownLatch(1);
     private final CountDownLatch finishLatch = new CountDownLatch(2);
-    private final CountDownLatch threadsFinishedLatch = new CountDownLatch(2);
 
     private TwoThreadsWithTransactions(EntityManagerFactory entityManagerFactory,
-            Supplier<T> contextSupplier,
-            String threadOneName,
-            List<SessionRunnableWithContext<T>> threadOneSteps,
-            String threadTwoName,
-            List<SessionRunnableWithContext<T>> threadTwoSteps) {
-        if (threadOneSteps.size() != threadTwoSteps.size()) {
+                                       Supplier<T> contextSupplier,
+                                       String threadOneName,
+                                       List<SessionRunnableWithContext<T>> threadOneTasks,
+                                       String threadTwoName,
+                                       List<SessionRunnableWithContext<T>> threadTwoTasks) {
+        if (threadOneTasks.size() != threadTwoTasks.size()) {
             throw new IllegalArgumentException("Uneven number of steps.");
         }
         this.entityManagerFactory = entityManagerFactory;
         this.contextSupplier = contextSupplier;
         this.threadOneName = threadOneName;
-        this.threadOneSteps = threadOneSteps;
         this.threadTwoName = threadTwoName;
-        this.threadTwoSteps = threadTwoSteps;
+
+        int steps = threadOneTasks.size();
+        List<CountDownLatch> threadOneLatches = IntStream.range(0, steps)
+                .mapToObj(__ -> new CountDownLatch(1))
+                .toList();
+        List<CountDownLatch> threadTwoLatches = IntStream.range(0, steps)
+                .mapToObj(__ -> new CountDownLatch(1))
+                .toList();
+
+        for (int i = 0; i < steps; ++i) {
+            CountDownLatch thisStepThreadOneLatch = i != 0
+                    ? threadOneLatches.get(i)
+                    : startLatch;
+            CountDownLatch thisStepThreadTwoLatch = threadTwoLatches.get(i);
+
+            CountDownLatch nextStepThreadOneLatch = i != (steps - 1)
+                    ? threadOneLatches.get(i + 1)
+                    : null;
+
+            Runnable blockThreadOneUntilFired = () -> awaitOnLatch(thisStepThreadOneLatch);
+            Runnable blockThreadTwoUntilFired = () -> awaitOnLatch(thisStepThreadTwoLatch);
+
+            Runnable fireThreadOneNextStep = nextStepThreadOneLatch != null
+                    ? nextStepThreadOneLatch::countDown
+                    : () -> {
+            };
+            Runnable fireThreadTwoCurrentStep = thisStepThreadTwoLatch::countDown;
+
+            SessionRunnableWithContext<T> threadOneTask = threadOneTasks.get(i);
+            SessionRunnableWithContext<T> threadTwoTask = threadTwoTasks.get(i);
+
+            ThreadStep<T> threadOneStep = new ThreadStep<>(fireThreadTwoCurrentStep, blockThreadOneUntilFired, i, threadOneTask);
+            ThreadStep<T> threadTwoStep = new ThreadStep<>(fireThreadOneNextStep, blockThreadTwoUntilFired, i, threadTwoTask);
+
+            this.threadOneSteps.add(threadOneStep);
+            this.threadTwoSteps.add(threadTwoStep);
+        }
     }
 
     public void run() throws Throwable {
         int steps = threadOneSteps.size();
-        List<CountDownLatch> threadOneLatches = IntStream.range(0, steps)
-                .mapToObj(any -> new CountDownLatch(1))
-                .collect(Collectors.toList());
-        List<CountDownLatch> threadTwoLatches = IntStream.range(0, steps)
-                .mapToObj(any -> new CountDownLatch(1))
-                .collect(Collectors.toList());
 
         log.info("Configured with {} steps.", steps);
 
-        // todo This is bad. If you are a recruiter, please note - I know it is bad, but it is 11 PM here, I want to get some sleep.
-        final List<Error> error = new ArrayList<>();
+        OptionalError error = new OptionalError();
 
-        new Thread(() -> doInHibernate(session -> {
-            T threadContext = contextSupplier.get();
-
-            log.info("{} INIT: Awaiting on the start", threadOneName);
-            awaitOnLatch(startLatch);
-
-            for (int i = 0; i < steps; ++i) {
-                try {
-                    if (i != 0) {
-                        log.info("{} #{}: await", threadOneName, i);
-                        awaitOnLatch(threadOneLatches.get(i));
-                    }
-
-                    if (!error.isEmpty()) {
-                        log.info("{} #{}: detected error in another thread; exit}", threadOneName, i);
-
-                        // Thread #2 should already be dead, so unlock shutdown.
-                        threadsFinishedLatch.countDown();
-                        return;
-                    }
-
-                    log.info("{} #{} execute", threadOneName, i);
-                    threadOneSteps.get(i).accept(session, threadContext);
-
-                    // Let the thread #2 do the step i.
-                    threadTwoLatches.get(i).countDown();
-                } catch (Throwable throwable) {
-                    log.info("{} #{} error {}", threadOneName, i, throwable.getMessage());
-                    error.add(new Error(i, throwable, true));
-
-                    // Unlock thread #2.
-                    threadTwoLatches.get(i).countDown();
-
-                    // Unlock shutdown
-                    finishLatch.countDown();
-                    threadsFinishedLatch.countDown();
-                    return;
-                }
-            }
-
-            log.info("{} FINISH: Awaiting on the finish", threadOneName);
-            finishLatch.countDown();
-            awaitOnLatch(finishLatch);
-
-            threadsFinishedLatch.countDown();
-
-            log.info("{} FINISH: Finished", threadOneName);
-        })).start();
-
-        new Thread(() -> doInHibernate(session -> {
-            T threadContext = contextSupplier.get();
-
-            log.info("{} INIT: Awaiting on the start", threadTwoName);
-            awaitOnLatch(startLatch);
-
-            for (int i = 0; i < steps; ++i) {
-                try {
-                    log.info("{} #{}: await", threadTwoName, i);
-                    awaitOnLatch(threadTwoLatches.get(i));
-
-                    if (!error.isEmpty()) {
-                        log.info("{} #{}: detected error in another thread; exit}", threadTwoName, i);
-
-                        // Thread #1 should already be dead, so unlock shutdown.
-                        threadsFinishedLatch.countDown();
-                        return;
-                    }
-
-                    log.info("{} #{}: execute", threadTwoName, i);
-                    threadTwoSteps.get(i).accept(session, threadContext);
-
-                    if (i != steps - 1) {
-                        threadOneLatches.get(i + 1).countDown();
-                    }
-                } catch (Throwable throwable) {
-                    log.info("{} #{} error {}", threadTwoName, i, throwable.getMessage());
-                    error.add(new Error(i, throwable, false));
-
-                    // Unlock thread #1 if neccessary.
-                    if (i != steps - 1) {
-                        threadOneLatches.get(i + 1).countDown();
-                    }
-
-                    // Unlock shutdown
-                    finishLatch.countDown();
-                    threadsFinishedLatch.countDown();
-                    return;
-                }
-            }
-
-            log.info("{} FINISH: Awaiting on the finish", threadTwoName);
-            finishLatch.countDown();
-            awaitOnLatch(finishLatch);
-
-            threadsFinishedLatch.countDown();
-
-            log.info("{} FINISH: Finished", threadTwoName);
-        })).start();
+        new Thread(executeTasks(error, threadOneName, threadOneSteps)).start();
+        new Thread(executeTasks(error, threadTwoName, threadTwoSteps)).start();
 
         log.info("Start threads");
         startLatch.countDown();
-        awaitOnLatch(threadsFinishedLatch);
+        awaitOnLatch(finishLatch);
 
-        if (error.isEmpty()) {
+        if (!error.isPresent()) {
             log.info("Threads finished successfully");
         } else {
-            Error caughtError = error.get(0);
-            log.info("Thread {} failed in step {}. Message: {}.", caughtError.firstThread ? "1" : "2", caughtError.step, caughtError.throwable.getMessage());
-            throw caughtError.throwable;
+            log.info("Thread {} failed in step {}. Message: {}.",
+                    error.getThreadName(),
+                    error.getStep(),
+                    error.getThrowable().getMessage());
+            throw error.getThrowable();
         }
+    }
+
+    private Runnable executeTasks(OptionalError error, String threadName, List<ThreadStep<T>> threadSteps) {
+        return () -> doInHibernate(session -> {
+            T threadContext = contextSupplier.get();
+
+            for (ThreadStep<T> step : threadSteps) {
+                String logPrefix = String.format(String.format("%s #%s:", threadName, step.getStepIndex() + 1));
+
+                log.info("{} await", logPrefix);
+                step.blockUntilFiredByAnotherThread();
+
+                if (error.isPresent()) {
+                    log.info("{} detected error in another thread; exit", logPrefix);
+                    break;
+                }
+
+                try {
+                    log.info("{} execute", logPrefix);
+                    step.getTask().accept(session, threadContext);
+                } catch (Throwable throwable) {
+                    log.error("{} error", logPrefix);
+                    error.set(threadName, step.getStepIndex(), throwable);
+                    break;
+                } finally {
+                    step.fireNextStepOnAnotherThread();
+                }
+            }
+
+            log.info("{} FINISH: Awaiting on the finish line", threadName);
+            finishLatch.countDown();
+            // Do not finish yet - another thread might still be running.
+            awaitOnLatch(finishLatch);
+
+            log.info("{} FINISH: Finished", threadName);
+        });
     }
 
     private void doInHibernate(Consumer<Session> callable) {
@@ -246,7 +244,7 @@ public class TwoThreadsWithTransactions<T> {
 
         private ThreadOneStepBuilder<F> addThreadTwoStep(SessionRunnableWithContext<F> runnable) {
             threadTwoSteps.add(runnable);
-            return new ThreadOneStepBuilder(this);
+            return new ThreadOneStepBuilder<>(this);
         }
 
         private void setThreadOneName(String threadOneName) {
@@ -278,16 +276,6 @@ public class TwoThreadsWithTransactions<T> {
 
             public StartBuilder(Builder<F> builder) {
                 this.builder = builder;
-            }
-
-            public StartBuilder<F> threadOneName(String name) {
-                builder.setThreadOneName(name);
-                return this;
-            }
-
-            public StartBuilder<F> threadTwoName(String name) {
-                builder.setThreadTwoName(name);
-                return this;
             }
 
             public ThreadTwoStepBuilder<F> threadOneStartsWith(SessionRunnableWithContext<F> step) {
@@ -332,15 +320,37 @@ public class TwoThreadsWithTransactions<T> {
         }
     }
 
-    static class Error {
-        private final int step;
-        private final Throwable throwable;
-        private final boolean firstThread;
+    static class OptionalError {
+        private boolean present;
+        private String threadName;
+        private int step;
+        private Throwable throwable;
 
-        public Error(int step, Throwable throwable, boolean firstThread) {
+        public OptionalError() {
+            present = false;
+        }
+
+        public void set(String threadName, int step, Throwable throwable) {
+            this.present = true;
+            this.threadName = threadName;
             this.step = step;
             this.throwable = throwable;
-            this.firstThread = firstThread;
+        }
+
+        public boolean isPresent() {
+            return present;
+        }
+
+        public int getStep() {
+            return step;
+        }
+
+        public Throwable getThrowable() {
+            return throwable;
+        }
+
+        public String getThreadName() {
+            return threadName;
         }
     }
 }

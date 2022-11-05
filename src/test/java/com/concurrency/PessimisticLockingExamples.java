@@ -227,44 +227,71 @@ public class PessimisticLockingExamples extends HibernateTest {
     }
 
     @Test
-    void predicateLockBlocksUpdate() throws Throwable {
+    void predicateLockBlocksUpdateInTheSameRange() throws Throwable {
         LockOptions pessimisticNoWaitLock = new LockOptions();
         pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
         pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
 
-        // Acquire lock, use NOWAIT to detect any conflicts right away.
-        Function<Session, List<Employee>> getProgrammers = session -> session.createQuery("" +
-                        "SELECT e " +
-                        "FROM Employee e " +
-                        "WHERE e.jobId = :jobId", Employee.class)
-                .setLockOptions(pessimisticNoWaitLock)
-                .setParameter("jobId", IT_PROG)
-                .getResultList();
-
-        Function<Session, Integer> updateProgrammers = session -> session.createQuery("" +
-                        "UPDATE Employee e " +
-                        "SET e.salary = 1.5 * e.salary " +
-                        "WHERE e.jobId = :jobId")
-                .setParameter("jobId", IT_PROG)
-                .executeUpdate();
-
         SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
-            List<Employee> programmers = getProgrammers.apply(session);
-            BigDecimal totalSalary = programmers.stream()
-                    .map(Employee::getSalary)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            log.info("Total salary of programmers: " + totalSalary);
+            List<Employee> programmers = session.createQuery("" +
+                            "SELECT e " +
+                            "FROM Employee e " +
+                            "WHERE e.jobId = :jobId", Employee.class)
+                    .setLockOptions(pessimisticNoWaitLock)
+                    .setParameter("jobId", IT_PROG)
+                    .getResultList();
             assertThat(programmers).isNotEmpty();
         };
 
-        SessionRunnableWithContext<EmptyContext> getAccountantsWithLock = (session, context) -> {
-            int updated = updateProgrammers.apply(session);
+        SessionRunnableWithContext<EmptyContext> updateProgrammers = (session, context) -> {
+            int updated = session.createQuery("" +
+                            "UPDATE Employee e " +
+                            "SET e.salary = 1.5 * e.salary " +
+                            "WHERE e.jobId = :jobId")
+                    .setParameter("jobId", IT_PROG)
+                    .executeUpdate();
             assertThat(updated).isNotZero();
         };
 
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
-                .thenThreadTwoTimeoutsOn(getAccountantsWithLock, Duration.ofSeconds(3))
+                .thenThreadTwoTimeoutsOn(updateProgrammers, Duration.ofSeconds(5))
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
+
+    @Test
+    void predicateLockDoesNotBlockUpdateInDifferentSameRange() throws Throwable {
+        LockOptions pessimisticNoWaitLock = new LockOptions();
+        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
+        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
+
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = session.createQuery("" +
+                            "SELECT e " +
+                            "FROM Employee e " +
+                            "WHERE e.jobId = :jobId", Employee.class)
+                    .setLockOptions(pessimisticNoWaitLock)
+                    .setParameter("jobId", IT_PROG)
+                    .getResultList();
+            assertThat(programmers).isNotEmpty();
+        };
+
+        SessionRunnableWithContext<EmptyContext> updateAccountants = (session, context) -> {
+            int updated = session.createQuery("" +
+                            "UPDATE Employee e " +
+                            "SET e.salary = 1.5 * e.salary " +
+                            "WHERE e.jobId = :jobId")
+                    .setParameter("jobId", FI_ACCOUNT)
+                    .executeUpdate();
+            assertThat(updated).isNotZero();
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                .thenThreadTwo(updateAccountants)
                 .thenFinish();
 
         twoThreadsWithTransactions.run();
