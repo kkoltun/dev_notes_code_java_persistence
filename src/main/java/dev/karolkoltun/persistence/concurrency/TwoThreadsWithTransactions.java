@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
@@ -174,6 +173,7 @@ public class TwoThreadsWithTransactions<T> {
             }
 
             log.info("{} FINISH: Awaiting on the finish line", threadName);
+
             finishLatch.countDown();
             // Do not finish yet - another thread might still be running.
             HibernateTest.awaitOnLatch(finishLatch);

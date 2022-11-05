@@ -67,17 +67,13 @@ public class PredicateLockTests extends HibernateTest {
     }
 
     @Test
-    void predicateLockDoesNotAllowsOtherPredicateLockInTheSameRange() throws Throwable {
-        LockOptions pessimisticNoWaitLock = new LockOptions();
-        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
-        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
-
+    void predicateLockDoesNotAllowsOtherPredicateLockInTheSameRange() {
         // Acquire lock, use NOWAIT to detect any conflicts right away.
         BiFunction<Session, JobId, List<Employee>> getEmployeesByJobId = (session, jobId) -> session.createQuery("" +
                         "SELECT e " +
                         "FROM Employee e " +
                         "WHERE e.jobId = :jobId", Employee.class)
-                .setLockOptions(pessimisticNoWaitLock)
+                .setLockOptions(getPessimisticNoWaitLock())
                 .setParameter("jobId", jobId)
                 .getResultList();
 
@@ -97,17 +93,13 @@ public class PredicateLockTests extends HibernateTest {
     }
 
     @Test
-    void predicateLockAllowsAnotherLockOnDifferentRange() throws Throwable {
-        LockOptions pessimisticNoWaitLock = new LockOptions();
-        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
-        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
-
+    void predicateLockAllowsAnotherLockOnDifferentRange() {
         // Acquire lock, use NOWAIT to detect any conflicts right away.
         BiFunction<Session, JobId, List<Employee>> getEmployeesByJobId = (session, jobId) -> session.createQuery("" +
                         "SELECT e " +
                         "FROM Employee e " +
                         "WHERE e.jobId = :jobId", Employee.class)
-                .setLockOptions(pessimisticNoWaitLock)
+                .setLockOptions(getPessimisticNoWaitLock())
                 .setParameter("jobId", jobId)
                 .getResultList();
 
@@ -130,17 +122,13 @@ public class PredicateLockTests extends HibernateTest {
     }
 
     @Test
-    void predicateLockBlocksUpdateInTheSameRange() throws Throwable {
-        LockOptions pessimisticNoWaitLock = new LockOptions();
-        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
-        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
-
+    void predicateLockBlocksUpdateInTheSameRange() {
         SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
             List<Employee> programmers = session.createQuery("" +
                             "SELECT e " +
                             "FROM Employee e " +
                             "WHERE e.jobId = :jobId", Employee.class)
-                    .setLockOptions(pessimisticNoWaitLock)
+                    .setLockOptions(getPessimisticNoWaitLock())
                     .setParameter("jobId", IT_PROG)
                     .getResultList();
             assertThat(programmers).isNotEmpty();
@@ -158,24 +146,20 @@ public class PredicateLockTests extends HibernateTest {
 
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
-                .thenThreadTwoTimeoutsOn(updateProgrammers, Duration.ofSeconds(5))
+                .thenThreadTwoTimeoutsOn(updateProgrammers, Duration.ofSeconds(2))
                 .thenFinish();
 
         twoThreadsWithTransactions.run();
     }
 
     @Test
-    void predicateLockDoesNotBlockUpdateInDifferentSameRange() throws Throwable {
-        LockOptions pessimisticNoWaitLock = new LockOptions();
-        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
-        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
-
+    void predicateLockDoesNotBlockUpdateInDifferentSameRange()  {
         SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
             List<Employee> programmers = session.createQuery("" +
                             "SELECT e " +
                             "FROM Employee e " +
                             "WHERE e.jobId = :jobId", Employee.class)
-                    .setLockOptions(pessimisticNoWaitLock)
+                    .setLockOptions(getPessimisticNoWaitLock())
                     .setParameter("jobId", IT_PROG)
                     .getResultList();
             assertThat(programmers).isNotEmpty();
@@ -199,18 +183,84 @@ public class PredicateLockTests extends HibernateTest {
         twoThreadsWithTransactions.run();
     }
 
+    @Test
+    void predicateLockBlocksDeleteInTheSameRange() {
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = session.createQuery("" +
+                            "SELECT e " +
+                            "FROM Employee e " +
+                            "WHERE e.jobId = :jobId", Employee.class)
+                    .setLockOptions(getPessimisticNoWaitLock())
+                    .setParameter("jobId", IT_PROG)
+                    .getResultList();
+            assertThat(programmers).isNotEmpty();
+        };
+
+        // Don't worry, this will not succeed.
+        SessionRunnableWithContext<EmptyContext> deleteProgrammers = (session, context) -> {
+            int deleted = session.createQuery("" +
+                            "DELETE FROM Employee e " +
+                            "WHERE e.jobId = :jobId")
+                    .setParameter("jobId", IT_PROG)
+                    .executeUpdate();
+            assertThat(deleted).isNotZero();
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                .thenThreadTwoTimeoutsOn(deleteProgrammers, Duration.ofSeconds(2))
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
+    @Test
+    void predicateLockDoesNotBlockDeleteInAnotherRange() {
+        SessionRunnableWithContext<EmptyContext> getProgrammersWithLock = (session, context) -> {
+            List<Employee> programmers = session.createQuery("" +
+                            "SELECT e " +
+                            "FROM Employee e " +
+                            "WHERE e.jobId = :jobId", Employee.class)
+                    .setLockOptions(getPessimisticNoWaitLock())
+                    .setParameter("jobId", IT_PROG)
+                    .getResultList();
+            assertThat(programmers).isNotEmpty();
+        };
+
+        SessionRunnableWithContext<EmptyContext> deleteAccountants = (session, context) -> {
+            int deleted = session.createQuery("" +
+                            "DELETE FROM Employee e " +
+                            "WHERE e.jobId = :jobId")
+                    .setParameter("jobId", FI_ACCOUNT)
+                    .executeUpdate();
+            assertThat(deleted).isNotZero();
+        };
+
+        SessionRunnableWithContext<EmptyContext> rollbackDelete = (session, context) -> {
+            session.getTransaction().rollback();
+        };
+
+        TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
+                .threadOneStartsWith(getProgrammersWithLock)
+                // This will not block, different scope.
+                .thenThreadTwo(deleteAccountants)
+                // No more tasks to do.
+                .thenThreadOne((__, ___) -> {})
+                // Rollback the delete.
+                .thenThreadTwo(rollbackDelete)
+                .thenFinish();
+
+        twoThreadsWithTransactions.run();
+    }
+
     // This is an interesting case in Postgres
     @Test
-    void predicateLockDoesNotBlockInsertInTheSameRange() throws Throwable {
-        LockOptions pessimisticNoWaitLock = new LockOptions();
-        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
-        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
-
+    void predicateLockDoesNotBlockInsertInTheSameRange() {
         Function<Session, List<Employee>> getAllProgrammersWithLock = session -> session.createQuery("" +
                         "SELECT e " +
                         "FROM Employee e " +
                         "WHERE e.jobId = :jobId", Employee.class)
-                .setLockOptions(pessimisticNoWaitLock)
+                .setLockOptions(getPessimisticNoWaitLock())
                 .setParameter("jobId", IT_PROG)
                 .getResultList();
 
@@ -236,17 +286,21 @@ public class PredicateLockTests extends HibernateTest {
 
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
+                // This is actually not blocked with the lock acquired in thread one.
                 .thenThreadTwo(addNewProgrammer)
                 .thenFinish();
 
         twoThreadsWithTransactions.run();
     }
 
-    // todo tests:
-    //  1. predicate lock -> blocks update in the same range
-    //  2. predicate lock -> blocks delete in the same range
-    //  3. predicate lock -> does not block insert in the same range
-    //  4. predicate lock -> does not block update in another range
-    //  5. predicate lock -> does not block delete in another range
+
+    private static LockOptions getPessimisticNoWaitLock() {
+        LockOptions pessimisticNoWaitLock = new LockOptions();
+        pessimisticNoWaitLock.setLockMode(LockMode.PESSIMISTIC_WRITE);
+        pessimisticNoWaitLock.setTimeOut(LockOptions.NO_WAIT);
+        return pessimisticNoWaitLock;
+    }
+
+    // todo tests: skip lock usage
 
 }
