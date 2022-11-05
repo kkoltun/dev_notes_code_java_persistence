@@ -8,7 +8,7 @@
     <persistence-unit name="HrAppPU">
         <jta-data-source>hrAppDataSource</jta-data-source>
 
-        <class>com.hr.Employee</class>
+        <class>dev.karolkoltun.persistence.Employee</class>
 
         <!--
         Disable Hibernate searching the classpath for mapped classes.
