@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -120,12 +121,12 @@ public class TwoThreadsWithTransactions<T> {
         }
     }
 
-    public void run() throws Throwable {
+    public void run() {
         int steps = threadOneSteps.size();
 
         log.info("Configured with {} steps.", steps);
 
-        OptionalError error = new OptionalError();
+        AtomicReference<TaskStepExecutionException> error = new AtomicReference<>();
 
         new Thread(executeTasks(error, threadOneName, threadOneSteps)).start();
         new Thread(executeTasks(error, threadTwoName, threadTwoSteps)).start();
@@ -134,18 +135,14 @@ public class TwoThreadsWithTransactions<T> {
         startLatch.countDown();
         HibernateTest.awaitOnLatch(finishLatch);
 
-        if (!error.isPresent()) {
+        if (error.get() == null) {
             log.info("Threads finished successfully");
         } else {
-            log.info("Thread {} failed in step {}. Message: {}.",
-                    error.getThreadName(),
-                    error.getStep(),
-                    error.getThrowable().getMessage());
-            throw error.getThrowable();
+            throw error.get();
         }
     }
 
-    private Runnable executeTasks(OptionalError error, String threadName, List<ThreadStep<T>> threadSteps) {
+    private Runnable executeTasks(AtomicReference<TaskStepExecutionException> error, String threadName, List<ThreadStep<T>> threadSteps) {
         return () -> doInHibernate(session -> {
             T threadContext = contextSupplier.get();
 
@@ -155,7 +152,7 @@ public class TwoThreadsWithTransactions<T> {
                 log.info("{} await", logPrefix);
                 step.blockUntilFiredByAnotherThread();
 
-                if (error.isPresent()) {
+                if (error.get() != null) {
                     log.info("{} detected error in another thread; exit", logPrefix);
                     break;
                 }
@@ -165,7 +162,7 @@ public class TwoThreadsWithTransactions<T> {
                     step.getTask().accept(session, threadContext);
                 } catch (Throwable throwable) {
                     log.error("{} error", logPrefix);
-                    error.set(threadName, step.getStepIndex(), throwable);
+                    error.set(new TaskStepExecutionException(throwable, threadName, step.getStepIndex()));
                     break;
                 } finally {
                     step.fireNextStepOnAnotherThread();
@@ -222,14 +219,16 @@ public class TwoThreadsWithTransactions<T> {
     public static class Builder<F> {
         private final EntityManagerFactory entityManagerFactory;
         private final Supplier<F> contextSupplier;
-        private String threadOneName;
+        private final String threadOneName;
         private final List<SessionRunnableWithContext<F>> threadOneSteps = new ArrayList<>();
-        private String threadTwoName;
+        private final String threadTwoName;
         private final List<SessionRunnableWithContext<F>> threadTwoSteps = new ArrayList<>();
 
         private Builder(EntityManagerFactory entityManagerFactory, Supplier<F> contextSupplier) {
             this.entityManagerFactory = entityManagerFactory;
             this.contextSupplier = contextSupplier;
+            this.threadOneName = "T1";
+            this.threadTwoName = "T2";
         }
 
         private ThreadTwoStepBuilder<F> addThreadOneStep(SessionRunnableWithContext<F> runnable) {
@@ -243,13 +242,6 @@ public class TwoThreadsWithTransactions<T> {
         }
 
         private TwoThreadsWithTransactions<F> build() {
-            if (threadOneName == null) {
-                threadOneName = "T1";
-            }
-            if (threadTwoName == null) {
-                threadTwoName = "T2";
-            }
-
             return new TwoThreadsWithTransactions<>(entityManagerFactory,
                     contextSupplier,
                     threadOneName,
@@ -300,40 +292,6 @@ public class TwoThreadsWithTransactions<T> {
             public ThreadOneStepBuilder<F> thenThreadTwoTimeoutsOn(SessionRunnableWithContext<F> step, Duration duration) {
                 return builder.addThreadTwoStep(new TimeoutSessionRunnableWithContext<>(step, duration));
             }
-        }
-    }
-
-    static class OptionalError {
-        private boolean present;
-        private String threadName;
-        private int step;
-        private Throwable throwable;
-
-        public OptionalError() {
-            present = false;
-        }
-
-        public void set(String threadName, int step, Throwable throwable) {
-            this.present = true;
-            this.threadName = threadName;
-            this.step = step;
-            this.throwable = throwable;
-        }
-
-        public boolean isPresent() {
-            return present;
-        }
-
-        public int getStep() {
-            return step;
-        }
-
-        public Throwable getThrowable() {
-            return throwable;
-        }
-
-        public String getThreadName() {
-            return threadName;
         }
     }
 }

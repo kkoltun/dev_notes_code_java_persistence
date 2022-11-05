@@ -84,14 +84,6 @@ class ReadOnlyOperationsTest extends JpaTest {
     }
   }
 
-  public Boolean isTrue(int i) {
-    return switch (i) {
-      case 1 -> false;
-      case 2 -> true;
-      default -> null;
-    };
-  }
-
   @Test
   void shouldSetSessionAsReadOnly() throws Exception {
     try {

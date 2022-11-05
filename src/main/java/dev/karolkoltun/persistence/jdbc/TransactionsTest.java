@@ -2,6 +2,7 @@ package dev.karolkoltun.persistence.jdbc;
 
 import dev.karolkoltun.persistence.entity.Employee;
 import dev.karolkoltun.persistence.entity.PayrollService;
+import io.vavr.control.Option;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -91,23 +92,21 @@ class TransactionsTest extends JdbcTest {
     BigDecimal oldSalary = getEmployeeById(id).getSalary();
 
     // When
-    PreparedStatement updateSalary = null;
     Connection connection = getConnection();
 
     connection.setAutoCommit(false);
 
-    try {
+    try (PreparedStatement getById = connection.prepareStatement(getByIdString);
+            PreparedStatement updateSalary = connection.prepareStatement(incrementSalaryString)) {
       Savepoint savepoint = connection.setSavepoint();
 
       // Get the employee
-      PreparedStatement getById = connection.prepareStatement(getByIdString);
       getById.setInt(1, id);
 
       ResultSet resultSet = getById.executeQuery();
       Employee employee = resultSet.next() ? QueryUtils.employeeFromResultSet(resultSet) : null;
 
       // Update the salary
-      updateSalary = connection.prepareStatement(incrementSalaryString);
 
       updateSalary.setBigDecimal(1, salaryUpdate);
       updateSalary.setInt(2, id);
@@ -129,9 +128,6 @@ class TransactionsTest extends JdbcTest {
         e.printStackTrace();
       }
     } finally {
-      if (updateSalary != null) {
-        updateSalary.close();
-      }
       connection.setAutoCommit(true);
     }
 
@@ -140,8 +136,8 @@ class TransactionsTest extends JdbcTest {
   }
 
   Employee getEmployeeById(int id) throws Exception {
-    try(Connection connection = getConnection()) {
-      PreparedStatement getById = connection.prepareStatement(getByIdString);
+    try(Connection connection = getConnection();
+            PreparedStatement getById = connection.prepareStatement(getByIdString)) {
       getById.setInt(1, id);
 
       ResultSet resultSet = getById.executeQuery();
