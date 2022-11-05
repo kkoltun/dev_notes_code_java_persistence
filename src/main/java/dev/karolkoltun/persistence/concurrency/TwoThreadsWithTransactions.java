@@ -128,8 +128,8 @@ public class TwoThreadsWithTransactions<T> {
 
         AtomicReference<TaskStepExecutionException> error = new AtomicReference<>();
 
-        new Thread(executeTasks(error, threadOneName, threadOneSteps)).start();
-        new Thread(executeTasks(error, threadTwoName, threadTwoSteps)).start();
+        new Thread(() -> executeTasks(error, threadOneName, threadOneSteps)).start();
+        new Thread(() -> executeTasks(error, threadTwoName, threadTwoSteps)).start();
 
         log.info("Start threads");
         startLatch.countDown();
@@ -142,8 +142,12 @@ public class TwoThreadsWithTransactions<T> {
         }
     }
 
-    private Runnable executeTasks(AtomicReference<TaskStepExecutionException> error, String threadName, List<ThreadStep<T>> threadSteps) {
-        return () -> doInHibernate(session -> {
+    private void executeTasks(AtomicReference<TaskStepExecutionException> error, String threadName, List<ThreadStep<T>> threadSteps) {
+        Transaction transaction = null;
+
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            transaction = session.beginTransaction();
+
             T threadContext = contextSupplier.get();
 
             for (ThreadStep<T> step : threadSteps) {
@@ -175,39 +179,25 @@ public class TwoThreadsWithTransactions<T> {
             HibernateTest.awaitOnLatch(finishLatch);
 
             log.info("{} FINISH: Finished", threadName);
-        });
-    }
 
-    private void doInHibernate(Consumer<Session> callable) {
-        Transaction transaction = null;
-        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
-
-            transaction = session.beginTransaction();
-
-            callable.accept(session);
-
-            if (session.isOpen()) {
-                if (!transaction.getRollbackOnly()) {
-                    transaction.commit();
-                } else {
-                    try {
-                        transaction.rollback();
-                    } catch (Exception e) {
-                        System.err.println("Rollback failure: " + e.getMessage());
-                        e.printStackTrace(System.err);
-                    }
-                }
+            if (!transaction.getRollbackOnly()) {
+                transaction.commit();
+            } else {
+                tryRollback(transaction);
             }
         } catch (Throwable t) {
-            if (transaction != null && transaction.isActive()) {
-                try {
-                    transaction.rollback();
-                } catch (Exception e) {
-                    System.err.println("Rollback failure: " + e.getMessage());
-                    e.printStackTrace(System.err);
-                }
-            }
+            tryRollback(transaction);
             throw t;
+        }
+    }
+
+    private static void tryRollback(Transaction transaction) {
+        if (transaction != null) {
+            try {
+                transaction.rollback();
+            } catch (Exception e) {
+                log.error("Rollback failure", e);
+            }
         }
     }
 

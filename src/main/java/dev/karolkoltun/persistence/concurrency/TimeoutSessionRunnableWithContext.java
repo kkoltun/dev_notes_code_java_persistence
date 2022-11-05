@@ -4,8 +4,7 @@ import org.hibernate.Session;
 import org.opentest4j.AssertionFailedError;
 
 import java.time.Duration;
-
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import java.util.concurrent.*;
 
 public class TimeoutSessionRunnableWithContext<T> implements SessionRunnableWithContext<T> {
     private final Duration timeout;
@@ -18,12 +17,20 @@ public class TimeoutSessionRunnableWithContext<T> implements SessionRunnableWith
 
     @Override
     public void accept(Session session, T t) {
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+
         try {
-            assertTimeoutPreemptively(timeout, () -> runnable.accept(session, t));
-        } catch (AssertionFailedError error) {
-            // This is expected
-            return;
+            Future<?> future = executorService.submit(() -> runnable.accept(session, t));
+            future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+
+            // Unexpected behavior.
+            throw new AssertionFailedError(String.format("The expected timeout after %s did not happen.", timeout));
+        } catch (TimeoutException exception) {
+            // Expected behavior.
+        } catch (ExecutionException | InterruptedException exception) {
+            throw new RuntimeException(exception);
+        } finally {
+            executorService.shutdownNow();
         }
-        throw new AssertionFailedError(String.format("The expected timeout after %s did not happen.", timeout));
     }
 }
