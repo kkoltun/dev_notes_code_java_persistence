@@ -29,8 +29,12 @@ public abstract class HibernateTest {
     protected EntityManagerFactory entityManagerFactory;
 
     public abstract DataSourceProvider dataSourceProvider();
-
     public abstract boolean recreateBeforeEachTest();
+
+    public Integer getIsolationLevel() {
+        // Use default PostgreSQL isolation level.
+        return Connection.TRANSACTION_READ_COMMITTED;
+    }
 
     // todo what about closing the factory?
     @BeforeEach
@@ -50,6 +54,9 @@ public abstract class HibernateTest {
         if (recreateBeforeEachTest()) {
             properties.put("hibernate.hbm2ddl.auto", "create-drop");
         }
+
+        properties.setProperty("hibernate.connection.isolation", String.valueOf(getIsolationLevel()));
+
         properties.setProperty("hibernate.show_sql", "true");
 
         BootstrapServiceRegistry bootstrapServiceRegistry = new BootstrapServiceRegistryBuilder().build();
