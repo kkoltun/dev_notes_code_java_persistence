@@ -66,6 +66,7 @@ public class TwoThreadsWithTransactions<T> {
     private final String threadTwoName;
     private final List<ThreadStep<T>> threadTwoSteps = new ArrayList<>();
     private final CountDownLatch startLatch = new CountDownLatch(1);
+    private final CountDownLatch stepsFinishedLatch = new CountDownLatch(2);
     private final CountDownLatch finishLatch = new CountDownLatch(2);
 
     private TwoThreadsWithTransactions(EntityManagerFactory entityManagerFactory,
@@ -172,24 +173,32 @@ public class TwoThreadsWithTransactions<T> {
                 }
             }
 
-            log.info("{} FINISH: Awaiting on the finish line", threadName);
+            log.info("{} FINISH: Awaiting on the finish line for another thread", threadName);
 
-            finishLatch.countDown();
+            stepsFinishedLatch.countDown();
             // Do not finish yet - another thread might still be running.
-            HibernateTest.awaitOnLatch(finishLatch);
+            HibernateTest.awaitOnLatch(stepsFinishedLatch);
+
+            // Now we can finalize the transaction - only after another thread finished too.
+            commitOrRollback(transaction);
 
             log.info("{} FINISH: Finished", threadName);
-
-            if (transaction.isActive()) {
-                if (!transaction.getRollbackOnly()) {
-                    transaction.commit();
-                } else {
-                    tryRollback(transaction);
-                }
-            }
         } catch (Throwable t) {
             tryRollback(transaction);
             throw t;
+        } finally {
+            // Whatever happened, do not let the main thread wait indefinitely.
+            finishLatch.countDown();
+        }
+    }
+
+    private static void commitOrRollback(Transaction transaction) {
+        if (transaction.isActive()) {
+            if (!transaction.getRollbackOnly()) {
+                transaction.commit();
+            } else {
+                tryRollback(transaction);
+            }
         }
     }
 
@@ -265,8 +274,16 @@ public class TwoThreadsWithTransactions<T> {
                 return builder.addThreadOneStep(step);
             }
 
-            public TwoThreadsWithTransactions<F> thenFinish() {
+            public ThreadTwoStepBuilder<F> thenThreadOneCommits() {
+                return builder.addThreadOneStep((session, context) -> session.getTransaction().commit());
+            }
+
+            public TwoThreadsWithTransactions<F> build() {
                 return builder.build();
+            }
+
+            public void run() {
+                builder.build().run();
             }
         }
 

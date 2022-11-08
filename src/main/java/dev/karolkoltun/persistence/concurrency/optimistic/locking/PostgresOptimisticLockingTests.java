@@ -80,7 +80,7 @@ public class PostgresOptimisticLockingTests extends HibernateTest {
                 .thenThreadTwo(runAsynchronousUpdateOfProgrammersDepartment)
                 .thenThreadOne(PostgresOptimisticLockingTests::commitTransaction)
                 .thenThreadTwo(assertThatUpdateFailedOnConcurrentModificationException)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -102,15 +102,13 @@ public class PostgresOptimisticLockingTests extends HibernateTest {
             assertThat(updateExecutionException).isNull();
         };
 
-        TwoThreadsWithTransactions<CompletableFutureContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory,
+        TwoThreadsWithTransactions.configure(entityManagerFactory,
                         CompletableFutureContext::new)
                 .threadOneStartsWith(PostgresOptimisticLockingTests::increaseProgrammersSalary)
                 .thenThreadTwo(runAsynchronousUpdateOfProgrammersDepartment)
-                .thenThreadOne(PostgresOptimisticLockingTests::commitTransaction)
+                .thenThreadOneCommits()
                 .thenThreadTwo(assertThatUpdateFinishedSuccessfully)
-                .thenFinish();
-
-        twoThreadsWithTransactions.run();
+                .run();
     }
 
     private static void updateProgrammerEmails(Connection connection, int isolationLevel) {

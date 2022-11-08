@@ -17,6 +17,7 @@ import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.EntityTransaction;
 import java.sql.Connection;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,20 +26,29 @@ import java.util.function.Function;
 
 public abstract class HibernateTest {
 
-    protected boolean useDatasource = true;
+    protected boolean useDatasource = false;
     protected EntityManagerFactory entityManagerFactory;
 
     public abstract DataSourceProvider dataSourceProvider();
+
     public abstract boolean recreateBeforeEachTest();
 
-    public Integer getIsolationLevel() {
-        // Use default PostgreSQL isolation level.
-        return Connection.TRANSACTION_READ_COMMITTED;
+    public Optional<Integer> getIsolationLevel() {
+        // This is not the best way, but it works with tests.
+        return Optional.empty();
     }
+
 
     // todo what about closing the factory?
     @BeforeEach
     void beforeEach() {
+        if (getIsolationLevel().isPresent() && useDatasource) {
+            // If you use the datasource, hibernate will ignore the transaction isolation level set in the properties.
+            // You would have to set the isolation level directly in the datasource configuration, but I could not find the exact way for MySQL or PostgreSQL datasources...
+            // See: https://vladmihalcea.com/a-beginners-guide-to-transaction-isolation-levels-in-enterprise-java/ for details.
+            throw new IllegalStateException("Do not use the datasource along with non-default isolation level.");
+        }
+
         DataSourceProvider dataSourceProvider = dataSourceProvider();
         Properties properties = new Properties();
         properties.setProperty("hibernate.dialect", dataSourceProvider.hibernateDialect());
@@ -55,7 +65,9 @@ public abstract class HibernateTest {
             properties.put("hibernate.hbm2ddl.auto", "create-drop");
         }
 
-        properties.setProperty("hibernate.connection.isolation", String.valueOf(getIsolationLevel()));
+        if (getIsolationLevel().isPresent()) {
+            properties.setProperty("hibernate.connection.isolation", String.valueOf(getIsolationLevel().get()));
+        }
 
         properties.setProperty("hibernate.show_sql", "true");
 
@@ -231,12 +243,16 @@ public abstract class HibernateTest {
         }
     }
 
-    protected <T> T getUsingHibernate(Function<Session, T> callable) {
+    protected <T> T getUsingHibernateReadOnly(Function<Session, T> callable) {
+        return getUsingHibernate(callable, true, FlushMode.MANUAL);
+    }
+
+    protected <T> T getUsingHibernate(Function<Session, T> callable, boolean readOnly, FlushMode flushMode) {
         AtomicReference<T> result = new AtomicReference<>();
         Transaction transaction = null;
         try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
-            session.setDefaultReadOnly(true);
-            session.setHibernateFlushMode(FlushMode.MANUAL);
+            session.setDefaultReadOnly(readOnly);
+            session.setHibernateFlushMode(flushMode);
 
             transaction = session.beginTransaction();
 

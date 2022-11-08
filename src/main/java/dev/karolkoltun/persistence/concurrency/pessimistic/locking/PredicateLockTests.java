@@ -87,7 +87,7 @@ public class PredicateLockTests extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwo(getAccountantsWithLock)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -116,7 +116,7 @@ public class PredicateLockTests extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwo(getAccountantsWithLock)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -147,7 +147,7 @@ public class PredicateLockTests extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwoTimeoutsOn(updateProgrammers, Duration.ofSeconds(2))
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -178,7 +178,7 @@ public class PredicateLockTests extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwo(updateAccountants)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -209,7 +209,7 @@ public class PredicateLockTests extends HibernateTest {
         TwoThreadsWithTransactions<EmptyContext> twoThreadsWithTransactions = TwoThreadsWithTransactions.configure(entityManagerFactory, EmptyContext::new)
                 .threadOneStartsWith(getProgrammersWithLock)
                 .thenThreadTwoTimeoutsOn(deleteProgrammers, Duration.ofSeconds(2))
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -248,7 +248,7 @@ public class PredicateLockTests extends HibernateTest {
                 .thenThreadOne((__, ___) -> {})
                 // Rollback the delete.
                 .thenThreadTwo(rollbackDelete)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
@@ -288,7 +288,7 @@ public class PredicateLockTests extends HibernateTest {
                 .threadOneStartsWith(getProgrammersWithLock)
                 // This is actually not blocked with the lock acquired in thread one.
                 .thenThreadTwo(addNewProgrammer)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }

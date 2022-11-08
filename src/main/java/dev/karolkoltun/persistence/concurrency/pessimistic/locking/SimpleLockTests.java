@@ -61,7 +61,7 @@ public class SimpleLockTests extends HibernateTest {
     }
 
     @Test
-    void sharedLockAllowsOtherSharedLock() throws Throwable {
+    void sharedLockAllowsOtherSharedLock() {
         SessionRunnableWithContext<EmployeeContext> getEmployeeOneWithSharedLockStep = (session, context) -> {
             // Acquire shared lock on Employee #100; use NOWAIT to detect any conflicts right away.
             Employee employee = session.find(Employee.class, 100,
@@ -85,13 +85,13 @@ public class SimpleLockTests extends HibernateTest {
                 .thenThreadTwo(getEmployeeOneWithSharedLockStep)
                 .thenThreadOne(checkStep)
                 .thenThreadTwo(checkStep)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }
 
     @Test
-    void sharedLockDoesNotAllowsOtherExclusiveLock() throws Throwable {
+    void sharedLockDoesNotAllowsOtherExclusiveLock() {
         SessionRunnableWithContext<EmployeeContext> getEmployeeOneWithSharedLock = (session, context) -> {
             // Acquire shared lock on Employee #100; use NOWAIT to detect any conflicts right away.
             Employee employee = session.find(Employee.class, 100,
@@ -119,7 +119,7 @@ public class SimpleLockTests extends HibernateTest {
                         EmployeeContext::new)
                 .threadOneStartsWith(getEmployeeOneWithSharedLock)
                 .thenThreadTwo(failAtGettingExclusiveLock)
-                .thenFinish();
+                .build();
 
         twoThreadsWithTransactions.run();
     }

@@ -25,7 +25,7 @@ public class BasicOperationsTest extends HibernateTest {
     @Test
     void shouldGetEmployee() {
         // WHEN
-        List<Employee> employees = getUsingHibernate(session -> session.createQuery("" +
+        List<Employee> employees = getUsingHibernateReadOnly(session -> session.createQuery("" +
                         "SELECT emp " +
                         "FROM Employee emp " +
                         "WHERE emp.firstName = :firstName" +
@@ -41,7 +41,7 @@ public class BasicOperationsTest extends HibernateTest {
     @Test
     void namedQueryShouldGetEmployee() {
         // WHEN
-        List<Employee> employees = getUsingHibernate(session -> session.createNamedQuery("get_employee_by_first_name_and_last_name", Employee.class)
+        List<Employee> employees = getUsingHibernateReadOnly(session -> session.createNamedQuery("get_employee_by_first_name_and_last_name", Employee.class)
                 .setParameter("firstName", "Lex")
                 .setParameter("lastName", "De Haan")
                 .list());
