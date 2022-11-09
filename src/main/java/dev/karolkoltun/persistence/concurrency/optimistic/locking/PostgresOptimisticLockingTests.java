@@ -1,8 +1,6 @@
 package dev.karolkoltun.persistence.concurrency.optimistic.locking;
 
-import dev.karolkoltun.persistence.DataSourceProvider;
-import dev.karolkoltun.persistence.HibernateTest;
-import dev.karolkoltun.persistence.PostgresqlHrDataSourceProvider;
+import dev.karolkoltun.persistence.concurrency.PostgresHrTest;
 import dev.karolkoltun.persistence.concurrency.SessionRunnableWithContext;
 import dev.karolkoltun.persistence.concurrency.TwoThreadsWithTransactions;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -23,18 +21,7 @@ import static java.sql.Connection.TRANSACTION_REPEATABLE_READ;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
-public class PostgresOptimisticLockingTests extends HibernateTest {
-
-    @Override
-    public DataSourceProvider dataSourceProvider() {
-        return new PostgresqlHrDataSourceProvider();
-    }
-
-    @Override
-    public boolean recreateBeforeEachTest() {
-        // Reuse the data that came with the database.
-        return false;
-    }
+public class PostgresOptimisticLockingTests extends PostgresHrTest {
 
     @Test
     void postgresDetectsSimultaneousChangesAndThrowsErrorInRepeatableReadIsolation() {

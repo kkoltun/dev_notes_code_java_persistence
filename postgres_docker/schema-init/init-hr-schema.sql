@@ -54,6 +54,7 @@ CREATE TABLE employees
     , commission_pct NUMERIC(2,2)
     , manager_id     INTEGER REFERENCES employees(employee_id)
     , department_id  INTEGER REFERENCES departments(department_id)
+    , version        SMALLINT DEFAULT 0
     , CONSTRAINT     emp_salary_min
       CHECK (salary > 0)
     , CONSTRAINT     emp_email_uk

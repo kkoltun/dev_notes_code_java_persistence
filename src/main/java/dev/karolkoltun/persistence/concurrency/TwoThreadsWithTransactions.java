@@ -301,6 +301,10 @@ public class TwoThreadsWithTransactions<T> {
             public ThreadOneStepBuilder<F> thenThreadTwoTimeoutsOn(SessionRunnableWithContext<F> step, Duration duration) {
                 return builder.addThreadTwoStep(new TimeoutSessionRunnableWithContext<>(step, duration));
             }
+
+            public ThreadOneStepBuilder<F> thenThreadTwoDoesNothing() {
+                return builder.addThreadTwoStep((__, ___) -> {});
+            }
         }
     }
 }

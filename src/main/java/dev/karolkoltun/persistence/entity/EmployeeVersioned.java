@@ -6,24 +6,9 @@ import java.time.LocalDate;
 
 import static javax.persistence.EnumType.STRING;
 
-@NamedQueries(
-        @NamedQuery(
-                name = "get_employee_by_first_name_and_last_name",
-                query = "SELECT e " +
-                        "FROM Employee e " +
-                        "WHERE e.firstName = :firstName" +
-                        "  AND e.lastName = :lastName",
-                hints = {
-                        @QueryHint(
-                                name = "org.hibernate.readOnly",
-                                value = "true"
-                        )
-                }
-        )
-)
 @Entity
 @Table(name = "employees")
-public class Employee {
+public class EmployeeVersioned {
 
   @Id
 //  @GeneratedValue(strategy = GenerationType.AUTO)
@@ -50,13 +35,13 @@ public class Employee {
 
   private BigDecimal salary;
 
-  // Here it is left without @Version annotation on purpose. Some tests are intended NOT to use the Hibernate optimistic locking mechanisms.
+  @Version
   private Short version;
 
-  public Employee() {
+  public EmployeeVersioned() {
   }
 
-  public Employee(Integer id, String firstName, String lastName, String email, String phone, LocalDate hireDate, JobId jobId, BigDecimal salary) {
+  public EmployeeVersioned(Integer id, String firstName, String lastName, String email, String phone, LocalDate hireDate, JobId jobId, BigDecimal salary) {
     this.id = id;
     this.firstName = firstName;
     this.lastName = lastName;

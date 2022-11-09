@@ -67,6 +67,7 @@ CREATE TABLE employees (
 	commission_pct DECIMAL(2, 2),
 	manager_id INT (11) UNSIGNED,
 	department_id INT (11) UNSIGNED,
+	version SMALLINT (6) UNSIGNED DEFAULT 0,
 	PRIMARY KEY (employee_id)
 	);
 

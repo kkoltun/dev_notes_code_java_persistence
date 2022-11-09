@@ -243,6 +243,10 @@ public abstract class HibernateTest {
         }
     }
 
+    protected<T> T getUsingHibernate(Function<Session, T> callable) {
+        return getUsingHibernate(callable, false, FlushMode.AUTO);
+    }
+
     protected <T> T getUsingHibernateReadOnly(Function<Session, T> callable) {
         return getUsingHibernate(callable, true, FlushMode.MANUAL);
     }

@@ -1,9 +1,11 @@
 package dev.karolkoltun.persistence;
 
 import dev.karolkoltun.persistence.entity.Employee;
+import dev.karolkoltun.persistence.entity.EmployeeVersioned;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -41,6 +43,6 @@ public class PostgresqlHrDataSourceProvider implements DataSourceProvider {
 
     @Override
     public List<Class<?>> annotatedClasses() {
-        return Collections.singletonList(Employee.class);
+        return Arrays.asList(Employee.class, EmployeeVersioned.class);
     }
 }
