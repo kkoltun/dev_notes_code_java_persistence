@@ -1,20 +1,27 @@
 package dev.karolkoltun.persistence.concurrency.optimistic.locking;
 
 import dev.karolkoltun.persistence.concurrency.PostgresHrTest;
+import dev.karolkoltun.persistence.concurrency.TwoThreads;
 import dev.karolkoltun.persistence.concurrency.TwoThreadsWithTransactions;
 import dev.karolkoltun.persistence.entity.EmployeeVersioned;
 import org.hibernate.FlushMode;
 import org.hibernate.Session;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.Test;
 
 import javax.persistence.OptimisticLockException;
 import java.math.BigDecimal;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class HibernateOptimisticLockingLongConversationTests extends PostgresHrTest {
+    // There are four tests here, presenting two approaches to Long Conversations:
+    // * Long Conversations implementation using Session-Per-Conversation pattern.
+    // * Long Conversations implementation using Session-Per-Request pattern.
+
     @Test
-    void hibernateVersioningAllowsLongConversations_spanningMultipleTransactions_willCatchAnyConflicts() {
+    void longConversation_implementedWith_sessionPerConversationPattern_catchesConflict() {
         // This is an example, where a session is composed of multiple transactions.
         // Between the transactions, we give some time to the user to think, make decisions in the UI etc.
         // We cannot keep the transaction open in the think-time, because we don't know how much it will really take.
@@ -24,19 +31,81 @@ public class HibernateOptimisticLockingLongConversationTests extends PostgresHrT
         // Thread 2 will try to ruin this mechanism by doing an update in the meantime.
         TwoThreadsWithTransactions.configure(entityManagerFactory, LongConversationContext::new)
                 // The long conversation starts.
-                .threadOneStartsWith(HibernateOptimisticLockingLongConversationTests::startLongConversationLoadEmployee)
+                .threadOneStartsWith(this::startLongConversationLoadEmployee)
                 // Meanwhile another user saves a conflicting update.
-                .thenThreadTwo(HibernateOptimisticLockingLongConversationTests::updateFirstEmployeeSalary)
+                .thenThreadTwo(this::updateFirstEmployeeSalary)
                 // The first user loads another objects - maybe they switched the page to edit another employee before saving.
-                .thenThreadOne(HibernateOptimisticLockingLongConversationTests::loadAnotherEmployeeIntoConversation)
+                .thenThreadOne(this::loadAnotherEmployeeIntoConversation)
                 .thenThreadTwoDoesNothing()
                 // Finally the first user clicks save -> Hibernate should detect a conflicting change.
-                .thenThreadOne(HibernateOptimisticLockingLongConversationTests::finishConversationAssertConflictIsCaught)
+                .thenThreadOne(this::finishConversationAssertConflictIsCaught)
                 .thenThreadTwoDoesNothing()
                 .run();
     }
 
-    private static void startLongConversationLoadEmployee(Session session, LongConversationContext context) {
+    @Test
+    void longConversation_implementedWith_sessionPerConversationPattern_allowsUpdatesWhenNoConflict() {
+        // This is basically the same test as before, but without any conflict.
+        // The second user does an update, but in an unrelated employee.
+        TwoThreadsWithTransactions.configure(entityManagerFactory, LongConversationContext::new)
+                .threadOneStartsWith(this::startLongConversationLoadEmployee)
+                .thenThreadTwo(this::updateUnrelatedEmployeeSalary)
+                .thenThreadOne(this::loadAnotherEmployeeIntoConversation)
+                .thenThreadTwoDoesNothing()
+                .thenThreadOne(this::finishConversationNoConflictsHere)
+                .thenThreadTwoDoesNothing()
+                .run();
+    }
+
+    @Test
+    void longConversation_implementedWith_sessionPerRequestPattern_catchesConflict() {
+        // Thread 1 is the long conversation thread.
+        // Thread 2 will try to ruin this mechanism by doing an update in the meantime.
+        TwoThreads.configure(LongConversationContext::new)
+                // The long conversation starts.
+                .threadOneStartsWith(this::startLongConversationLoadEmployee_shortSession)
+                // Meanwhile another user saves a conflicting update.
+                .thenThreadTwo(this::updateFirstEmployeeSalary_shortSession)
+                // The first user loads another objects - maybe they switched the page to edit another employee before saving.
+                .thenThreadOne(this::loadAnotherEmployeeIntoConversation_shortSession)
+                .thenThreadTwoDoesNothing()
+                // Finally the first user clicks save -> Hibernate should detect a conflicting change.
+                .thenThreadOne(this::finishConversationAssertConflictIsCaught_shortSession)
+                .thenThreadTwoDoesNothing()
+                .run();
+    }
+
+    @Test
+    void longConversation_implementedWith_sessionPerRequestPattern_allowsUpdatesWhenNoConflict() {
+        // This is basically the same test as before, but without any conflict.
+        // The second user does an update, but in an unrelated employee.
+        TwoThreads.configure(LongConversationContext::new)
+                .threadOneStartsWith(this::startLongConversationLoadEmployee_shortSession)
+                .thenThreadTwo(this::updateUnrelatedEmployeeSalary_shortSession)
+                .thenThreadOne(this::loadAnotherEmployeeIntoConversation_shortSession)
+                .thenThreadTwoDoesNothing()
+                .thenThreadOne(this::finishConversationNoConflictsHere_shortSession)
+                .thenThreadTwoDoesNothing()
+                .run();
+    }
+
+    private void startLongConversationLoadEmployee_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+
+            startLongConversationLoadEmployee(session, context);
+
+            // This is the point where the request ends, so the session ends too.
+        }
+    }
+
+    private void startLongConversationLoadEmployee(Session session, LongConversationContext context) {
+        // This is the first step for Thread 1 in the tests.
+        // If executed in a session context, the transaction will already be open.
+        // If executed in a session-less context, we need to open the transaction ourselves.
+        if (!session.getTransaction().isActive()) {
+            session.beginTransaction();
+        }
+
         // Do not flush until instructed! Saving changes will be the last step of the conversation.
         session.setHibernateFlushMode(FlushMode.MANUAL);
 
@@ -52,7 +121,13 @@ public class HibernateOptimisticLockingLongConversationTests extends PostgresHrT
         session.getTransaction().commit();
     }
 
-    private static void loadAnotherEmployeeIntoConversation(Session session, LongConversationContext context) {
+    private void loadAnotherEmployeeIntoConversation_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            loadAnotherEmployeeIntoConversation(session, context);
+        }
+    }
+
+    private void loadAnotherEmployeeIntoConversation(Session session, LongConversationContext context) {
         // The user selects another employee to edit.
         session.getTransaction().begin();
         EmployeeVersioned anotherEmployee = session.find(EmployeeVersioned.class, 101);
@@ -61,7 +136,60 @@ public class HibernateOptimisticLockingLongConversationTests extends PostgresHrT
         context.setSecondEmployee(anotherEmployee);
     }
 
-    private static void finishConversationAssertConflictIsCaught(Session session, LongConversationContext context) {
+    private void updateFirstEmployeeSalary_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            updateFirstEmployeeSalary(session, context);
+        }
+    }
+
+    private void updateFirstEmployeeSalary(Session session, LongConversationContext context) {
+        // This is the first step for Thread 2 in the conflict test.
+        // If executed in a session context, the transaction will already be open.
+        // If executed in a session-less context, we need to open the transaction ourselves.
+        if (!session.getTransaction().isActive()) {
+            session.beginTransaction();
+        }
+
+        EmployeeVersioned employee = session.find(EmployeeVersioned.class, 100);
+        assertThat(employee).isNotNull();
+
+        employee.setSalary(employee.getSalary().add(BigDecimal.TEN));
+        session.getTransaction().commit();
+    }
+
+    private void updateUnrelatedEmployeeSalary_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            updateUnrelatedEmployeeSalary(session, context);
+        }
+    }
+
+    private void updateUnrelatedEmployeeSalary(Session session, LongConversationContext context) {
+        // This is the first step for Thread 2 in the no-conflict test.
+        // If executed in a session context, the transaction will already be open.
+        // If executed in a session-less context, we need to open the transaction ourselves.
+        if (!session.getTransaction().isActive()) {
+            session.beginTransaction();
+        }
+
+        EmployeeVersioned employee = session.find(EmployeeVersioned.class, 110);
+        assertThat(employee).isNotNull();
+
+        employee.setSalary(employee.getSalary().add(BigDecimal.TEN));
+        session.getTransaction().commit();
+    }
+
+    private void finishConversationAssertConflictIsCaught_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            // We need to first open session and re-attach objects, then we can try to save the changes done by the user.
+            // Hibernate should still detect conflict.
+            reattachObjectsToSession(context, session);
+
+            // Now we can proceed with the ordinary test
+            finishConversationAssertConflictIsCaught(session, context);
+        }
+    }
+
+    private void finishConversationAssertConflictIsCaught(Session session, LongConversationContext context) {
         // User clicked save, finally!
         EmployeeVersioned firstEmployee = context.getFirstEmployee();
         EmployeeVersioned secondEmployee = context.getSecondEmployee();
@@ -82,8 +210,17 @@ public class HibernateOptimisticLockingLongConversationTests extends PostgresHrT
         assertThatThrownBy(session::flush).isInstanceOf(OptimisticLockException.class);
     }
 
+    private void finishConversationNoConflictsHere_shortSession(LongConversationContext context) {
+        try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
+            // We need to first open session and re-attach objects, then we can try to save the changes done by the user.
+            // Hibernate should still detect conflict.
+            reattachObjectsToSession(context, session);
 
-    private static void finishConversationNoConflictsHere(Session session, LongConversationContext context) {
+            finishConversationNoConflictsHere(session, context);
+        }
+    }
+
+    private void finishConversationNoConflictsHere(Session session, LongConversationContext context) {
         // User clicked save, finally!
         EmployeeVersioned firstEmployee = context.getFirstEmployee();
         EmployeeVersioned secondEmployee = context.getSecondEmployee();
@@ -102,35 +239,26 @@ public class HibernateOptimisticLockingLongConversationTests extends PostgresHrT
         session.getTransaction().commit();
     }
 
+    private static void reattachObjectsToSession(LongConversationContext context, Session session) {
+        EmployeeVersioned firstEmployee = context.getFirstEmployee();
+        EmployeeVersioned secondEmployee = context.getSecondEmployee();
 
-    private static void updateFirstEmployeeSalary(Session session, LongConversationContext context) {
-        EmployeeVersioned employee = session.find(EmployeeVersioned.class, 100);
-        assertThat(employee).isNotNull();
+        assertThat(session.contains(firstEmployee)).isFalse();
+        assertThat(session.contains(secondEmployee)).isFalse();
 
-        employee.setSalary(employee.getSalary().add(BigDecimal.TEN));
-        session.getTransaction().commit();
-    }
+        // This is a re-attach according to Java Persistence with Hibernate. A fragment from the book, section 9.3.2:
+            /*
+              A detached instance may be reattached to a new Session (and managed by this
+              new persistence context) by calling update() on the detached object. In our
+              experience, it may be easier for you to understand the following code if you
+              rename the update() method in your mind to reattach()—however, there is a
+              good reason it’s called updating.
+             */
+        session.update(context.getFirstEmployee());
+        session.update(context.getSecondEmployee());
 
-    private static void updateUnrelatedEmployeeSalary(Session session, LongConversationContext context) {
-        EmployeeVersioned employee = session.find(EmployeeVersioned.class, 110);
-        assertThat(employee).isNotNull();
-
-        employee.setSalary(employee.getSalary().add(BigDecimal.TEN));
-        session.getTransaction().commit();
-    }
-
-    @Test
-    void hibernateVersioningAllowsLongConversations_spanningMultipleTransactions_willWorkWhenThereAreNoConflicts() {
-        // This is basically the same test as before, but without any conflict.
-        // The second user does an update, but in an unrelated employee.
-        TwoThreadsWithTransactions.configure(entityManagerFactory, LongConversationContext::new)
-                .threadOneStartsWith(HibernateOptimisticLockingLongConversationTests::startLongConversationLoadEmployee)
-                .thenThreadTwo(HibernateOptimisticLockingLongConversationTests::updateUnrelatedEmployeeSalary)
-                .thenThreadOne(HibernateOptimisticLockingLongConversationTests::loadAnotherEmployeeIntoConversation)
-                .thenThreadTwoDoesNothing()
-                .thenThreadOne(HibernateOptimisticLockingLongConversationTests::finishConversationNoConflictsHere)
-                .thenThreadTwoDoesNothing()
-                .run();
+        assertThat(session.contains(firstEmployee)).isTrue();
+        assertThat(session.contains(secondEmployee)).isTrue();
     }
 
     private static class LongConversationContext {

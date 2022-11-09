@@ -28,43 +28,12 @@ import java.util.stream.IntStream;
 public class TwoThreadsWithTransactions<T> {
     private static final Logger log = LoggerFactory.getLogger(TwoThreadsWithTransactions.class);
 
-    static class ThreadStep<R> {
-        private final Runnable fireNextStepRunnable;
-
-        private final Runnable blockUntilFiredRunnable;
-        private final int stepCount;
-        private final SessionRunnableWithContext<R> task;
-
-        public ThreadStep(Runnable fireNextStepRunnable, Runnable blockUntilFiredRunnable, int stepCount, SessionRunnableWithContext<R> task) {
-            this.fireNextStepRunnable = fireNextStepRunnable;
-            this.blockUntilFiredRunnable = blockUntilFiredRunnable;
-            this.stepCount = stepCount;
-            this.task = task;
-        }
-
-        public void fireNextStepOnAnotherThread() {
-            fireNextStepRunnable.run();
-        }
-
-        public void blockUntilFiredByAnotherThread() {
-            blockUntilFiredRunnable.run();
-        }
-
-        public int getStepIndex() {
-            return stepCount;
-        }
-
-        public SessionRunnableWithContext<R> getTask() {
-            return task;
-        }
-    }
-
     private final EntityManagerFactory entityManagerFactory;
     private final Supplier<T> contextSupplier;
     private final String threadOneName;
-    private final List<ThreadStep<T>> threadOneSteps = new ArrayList<>();
+    private final List<ThreadStep<SessionRunnableWithContext<T>>> threadOneSteps = new ArrayList<>();
     private final String threadTwoName;
-    private final List<ThreadStep<T>> threadTwoSteps = new ArrayList<>();
+    private final List<ThreadStep<SessionRunnableWithContext<T>>> threadTwoSteps = new ArrayList<>();
     private final CountDownLatch startLatch = new CountDownLatch(1);
     private final CountDownLatch stepsFinishedLatch = new CountDownLatch(2);
     private final CountDownLatch finishLatch = new CountDownLatch(2);
@@ -113,8 +82,8 @@ public class TwoThreadsWithTransactions<T> {
             SessionRunnableWithContext<T> threadOneTask = threadOneTasks.get(i);
             SessionRunnableWithContext<T> threadTwoTask = threadTwoTasks.get(i);
 
-            ThreadStep<T> threadOneStep = new ThreadStep<>(fireThreadTwoCurrentStep, blockThreadOneUntilFired, i, threadOneTask);
-            ThreadStep<T> threadTwoStep = new ThreadStep<>(fireThreadOneNextStep, blockThreadTwoUntilFired, i, threadTwoTask);
+            ThreadStep<SessionRunnableWithContext<T>> threadOneStep = new ThreadStep<SessionRunnableWithContext<T>>(fireThreadTwoCurrentStep, blockThreadOneUntilFired, i, threadOneTask);
+            ThreadStep<SessionRunnableWithContext<T>> threadTwoStep = new ThreadStep<SessionRunnableWithContext<T>>(fireThreadOneNextStep, blockThreadTwoUntilFired, i, threadTwoTask);
 
             this.threadOneSteps.add(threadOneStep);
             this.threadTwoSteps.add(threadTwoStep);
@@ -142,7 +111,7 @@ public class TwoThreadsWithTransactions<T> {
         }
     }
 
-    private void executeTasks(AtomicReference<TaskStepExecutionException> error, String threadName, List<ThreadStep<T>> threadSteps) {
+    private void executeTasks(AtomicReference<TaskStepExecutionException> error, String threadName, List<ThreadStep<SessionRunnableWithContext<T>>> threadSteps) {
         Transaction transaction = null;
 
         try (Session session = entityManagerFactory.unwrap(SessionFactory.class).openSession()) {
@@ -150,7 +119,7 @@ public class TwoThreadsWithTransactions<T> {
 
             T threadContext = contextSupplier.get();
 
-            for (ThreadStep<T> step : threadSteps) {
+            for (ThreadStep<SessionRunnableWithContext<T>> step : threadSteps) {
                 String logPrefix = String.format(String.format("%s #%s:", threadName, step.getStepIndex() + 1));
 
                 log.info("{} await", logPrefix);
